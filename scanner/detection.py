@@ -4,9 +4,6 @@ import re
 from urllib.parse import urlparse, quote
 from requests import Request
 
-# BASE DE DONNÉES DE SIGNATURES WAF 
-# Dictionnaire structuré contenant les empreintes connues.
-# Basé sur headers spécifiques, cookies de tracking et messages d'erreur dans le body.
 WAF_SIGNATURES = {
     'Cloudflare': { 
         'headers': ['cf-ray', '__cfduid', 'cloudflare-cache-status', 'cdn-loop: cloudflare', 'cf-ipcountry'], 
@@ -110,14 +107,9 @@ WAF_SIGNATURES = {
 }
 
 def generate_random_string(length=8):
-    """Génère une chaîne aléatoire pour contourner les caches."""
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
 
 def match_signatures(response, heuristic=False):
-    """
-    Analyse Passive : Compare la réponse HTTP aux signatures de la base.
-    Vérifie Headers, Cookies et Body.
-    """
     detected = set()
     if not response: return []
     
@@ -126,13 +118,10 @@ def match_signatures(response, heuristic=False):
     b_str = response.text.lower()
 
     for name, sigs in WAF_SIGNATURES.items():
-        # 1. Vérification des Headers
         if any(s in h_str for s in sigs.get('headers', [])): 
             detected.add(f"{name} (Header)")
-        # 2. Vérification des Cookies
         if any(s in c_str for s in sigs.get('cookies', [])): 
             detected.add(f"{name} (Cookie)")
-        # 3. Vérification du Body (Souvent la page de blocage du WAF)
         if heuristic or response.status_code >= 400:
             if any(s in b_str for s in sigs.get('body', [])): 
                 detected.add(f"{name} (Body)")
@@ -140,11 +129,6 @@ def match_signatures(response, heuristic=False):
     return list(detected)
 
 def probe_behavior(engine, target):
-    """
-    Analyse Active : Envoie des payloads provocateurs pour forcer le WAF à réagir.
-    Permet de déterminer si le WAF est en mode bloquant ou passif.
-    """
-    
     parsed = urlparse(target)
     base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
     if not base_url.endswith('/'): base_url += '/'
@@ -155,11 +139,8 @@ def probe_behavior(engine, target):
     status = "Passif (Non-Bloquant)"
     normalization = "Non détectée"
     
-    # Codes HTTP typiques d'un blocage WAF 
     BLOCK_CODES = [400, 403, 406, 500, 501]
 
-    # TEST 1 : Payload Simple 
-    # Payload XSS classique. La lib 'requests' va l'encoder URL automatiquement.
     payload_1 = "<script>alert(1)</script>"
     params_1 = {rnd_param: payload_1}
     
@@ -174,18 +155,13 @@ def probe_behavior(engine, target):
         if engine.config['verbose']:
             print(f"[DEBUG] Réponse Test 1 : Code {resp1.status_code}")
         
-        # Analyse des signatures dans la réponse provoquée
         detected_names.extend(match_signatures(resp1, heuristic=True))
         
         if resp1.status_code in BLOCK_CODES:
             status = f"Actif/Bloquant (Code {resp1.status_code})"
-            # Heuristique : Si Nginx renvoie une erreur sur un payload, c'est souvent un WAF configuré dessus
             if "nginx" in str(resp1.headers).lower() and not detected_names:
                 detected_names.append("ModSecurity / Nginx WAF (Heuristic)")
 
-    # TEST 2 : Double Encodage (Contournement & Normalisation)
-    # Payload avec double URL encoding. Certains WAF décodent une fois, d'autres deux.
-    # On construit l'URL manuellement pour empêcher 'requests' de ré-encoder.
     payload_double = "%253Cscript%253Ealert(1)%253C/script%253E"
     test_url_2 = f"{base_url}{separator}{rnd_param}={payload_double}"
     
@@ -195,7 +171,7 @@ def probe_behavior(engine, target):
 
         req = Request('GET', test_url_2)
         prepped = engine.session.prepare_request(req)
-        prepped.url = test_url_2 # Force l'URL brute
+        prepped.url = test_url_2
         
         resp2 = engine.session.send(prepped, verify=False, allow_redirects=True)
         
@@ -204,7 +180,6 @@ def probe_behavior(engine, target):
                 print(f"[DEBUG] Réponse Test 2 : Code {resp2.status_code}")
 
             if resp2.status_code in BLOCK_CODES:
-                # Si bloqué ici, le WAF a décodé l'input -> Normalisation active
                 normalization = "Active (Le WAF décode les entrées)"
                 
                 if "Passif" in status:
@@ -219,29 +194,23 @@ def probe_behavior(engine, target):
     return status, normalization, list(set(detected_names))
 
 def detect_waf(engine):
-    """Fonction principale qui orchestre la détection."""
     target = engine.config['target']
     
-    # 1. Baseline : Requête saine pour comparer
     base_resp = engine._send_request(target, method="GET")
     
     if not base_resp:
         return {'name': 'Inaccessible', 'behavior': {'status': 'N/A'}}
 
-    # 2. Identification Passive
     passive_names = match_signatures(base_resp)
     
-    # 3. Identification Active
     status, normalization, active_names = probe_behavior(engine, target)
     
-    # 4. Agrégation des résultats
     all_names = list(set(passive_names + active_names))
     
     waf_name = "Aucun WAF détecté"
     if all_names:
         waf_name = ", ".join(all_names)
     
-    # Heuristique de dernier recours : si ça bloque mais sans signature connue
     if "Bloquant" in status and "Aucun" in waf_name:
          waf_name = "Generic WAF (Comportemental)"
 

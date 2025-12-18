@@ -4,18 +4,12 @@ import os
 import html
 
 def generate_report(engine):
-    """
-    Point d'entrée pour la génération des rapports.
-    Dispatche vers le format de sortie configuré (JSON, HTML, TXT).
-    """
-    
     output_file = engine.config['output']
     fmt = engine.config['format']
     
     if not output_file:
         return
 
-    # Agrégation des métadonnées du scan et des vulnérabilités trouvées
     data = {
         "scan_info": {
             "tool": "WAFMap v1.0",
@@ -33,7 +27,6 @@ def generate_report(engine):
     }
 
     try:
-        # Dispatch selon le format
         if fmt == 'json':
             save_json(data, output_file)
         elif fmt == 'html':
@@ -47,12 +40,10 @@ def generate_report(engine):
         print(f"[ERROR] Échec critique lors de l'écriture du rapport : {e}")
 
 def save_json(data, filename):
-    """Export des données brutes en JSON pour intégration possible avec d'autres outils."""
     with open(filename, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
 def save_txt(data, filename):
-    """Génération d'un rapport textuel humainement lisible (format logs)."""
     with open(filename, 'w', encoding='utf-8') as f:
         f.write(f"=== RAPPORT DE PENTEST WAFMAP ===\n")
         f.write(f"Généré le : {data['scan_info']['date']}\n")
@@ -69,19 +60,11 @@ def save_txt(data, filename):
             f.write("-" * 50 + "\n")
 
 def save_html(data, filename):
-    """
-    Génération d'un rapport HTML interactif.
-    NOTE DE SÉCURITÉ : Utilisation de html.escape() obligatoire sur les payloads
-    pour éviter une XSS stockée lors de l'ouverture du rapport par l'auditeur.
-    """
-    
-    # Construction du DOM pour les vulnérabilités
     vuln_html = ""
     if not data['vulnerabilities']:
         vuln_html = '<div class="empty-state">Aucune vulnérabilité détectée. La cible semble sécurisée.</div>'
     else:
         for i, vuln in enumerate(data['vulnerabilities']):
-            # Assainissement des entrées utilisateur (payloads/details) avant injection dans le DOM
             safe_payload = html.escape(vuln['payload'])
             safe_details = html.escape(vuln['details'])
             
@@ -100,7 +83,6 @@ def save_html(data, filename):
             </div>
             """
 
-    # Template HTML
     template = f"""
     <!DOCTYPE html>
     <html lang="fr">
