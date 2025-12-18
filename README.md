@@ -77,6 +77,6 @@ python3 wafmap.py --target "http://target.com/api?cmd=127.0.0.1" \
 > [!CAUTION]
 > **L'utilisation de cet outil est strictement réservée à des tests de sécurité autorisés dans un cadre légal et éthique.**
 
-L'auteur décline toute responsabilité en cas d'utilisation malveillante, de dommages causés à des systèmes tiers ou d'activités illégales. Pour rappel, l'accès ou le maintien frauduleux dans un système de traitement automatisé de données est puni par la loi. **Hacking is illegal.**
+L'auteur décline toute responsabilité en cas d'utilisation malveillante, de dommages causés à des systèmes tiers ou d'activités illégales.
 
 ---
