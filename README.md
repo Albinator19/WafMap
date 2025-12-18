@@ -36,7 +36,7 @@ L'outil est architecturé autour d'un moteur central écrit en **Python 3**, pri
 ### Installation
 ```bash
 git clone https://github.com/Albinator19/WafMap/
-cd wafmap
+cd WafMap
 pip install -r requirements.txt
 ```
 ### Exemples de commandes
