@@ -7,14 +7,14 @@ def load_payloads_from_file(filename="payloads/ssrf.txt"):
     try:
         with open(filename, 'r') as f:
             return [line.strip() for line in f if line.strip() and not line.startswith('#')]
-    except: return [AWS_META]
+    except Exception: return [AWS_META]
 
 def run_ssrf_test(engine, injection_point, param_name, level, waf_bypass_enabled, waf_name=None):
     url = injection_point['url']
     method = injection_point['method']
     
     base_resp = engine._send_request(url, method=method)
-    original_text = base_resp.text if base_resp else ""
+    original_text = base_resp.text if base_resp is not None else ""
     
     payloads = load_payloads_from_file()
 
@@ -36,7 +36,7 @@ def run_ssrf_test(engine, injection_point, param_name, level, waf_bypass_enabled
 
         resp = engine._send_request(url, method=method, data=data, params=params)
         
-        if resp:
+        if resp is not None:
             if AWS_META in current_payload:
                 if "ami-id" in resp.text or "instance-id" in resp.text:
                     engine.add_vulnerability("SSRF (Cloud Leak)", url, final_payload, "AWS Data", parameter=param_name)

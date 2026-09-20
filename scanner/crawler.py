@@ -15,7 +15,7 @@ def is_valid_scope(url, base_domain):
         if parsed.scheme in ['mailto', 'javascript', 'tel']:
             return False
         return True
-    except:
+    except Exception:
         return False
 
 def get_structure_hash(url, method, params):
@@ -30,7 +30,7 @@ def load_wordlist(filename="payloads/common.txt"):
             with open(filename, 'r') as f:
                 return [line.strip() for line in f if line.strip() and not line.startswith('#')]
         return []
-    except: return []
+    except Exception: return []
 
 def fuzz_directories(engine, base_url):
     print(f"    [*] Lancement du Fuzzing de répertoires...")
@@ -46,7 +46,7 @@ def fuzz_directories(engine, base_url):
         
         resp = engine._send_request(url, method="HEAD") 
 
-        if resp and resp.status_code in [200, 301, 302, 401, 403]:
+        if resp is not None and resp.status_code in [200, 301, 302, 401, 403]:
             print(f"    [+] Répertoire découvert : {url} (Code {resp.status_code})")
             discovered.append(url)
             
@@ -56,7 +56,7 @@ def fetch_robots_sitemap(engine, base_url):
     urls = []
     
     resp = engine._send_request(urljoin(base_url, "/robots.txt"))
-    if resp and resp.status_code == 200:
+    if resp is not None and resp.status_code == 200:
         print("    [+] robots.txt détecté")
         for line in resp.text.splitlines():
             if "Disallow:" in line or "Allow:" in line:
@@ -72,7 +72,7 @@ def fetch_robots_sitemap(engine, base_url):
             soup = BeautifulSoup(resp.text, 'xml')
             for loc in soup.find_all('loc'):
                 urls.append(loc.text)
-        except: pass
+        except Exception: pass
             
     return urls
 
@@ -102,7 +102,7 @@ def crawl_target(engine, api_seeds=None):
         if not is_valid_scope(curr_url, base_domain): continue
 
         resp = engine._send_request(curr_url)
-        if not resp or 'text/html' not in resp.headers.get('Content-Type', ''): continue
+        if resp is None or 'text/html' not in resp.headers.get('Content-Type', ''): continue
 
         soup = BeautifulSoup(resp.text, 'html.parser')
 

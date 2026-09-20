@@ -237,7 +237,7 @@ def ip_to_dword(ip):
     try:
         packed = socket.inet_aton(ip)
         return struct.unpack("!L", packed)[0]
-    except: return ip
+    except Exception: return ip
 
 def ssrf_obfuscate(payload, strategy=None):
     if "wafmap-callback.test" in payload:
