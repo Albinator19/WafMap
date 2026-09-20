@@ -5,74 +5,74 @@ from urllib.parse import urlparse, quote
 from requests import Request
 
 WAF_SIGNATURES = {
-    'Cloudflare': { 
-        'headers': ['cf-ray', '__cfduid', 'cloudflare-cache-status', 'cdn-loop: cloudflare', 'cf-ipcountry'], 
-        'cookies': ['__cfduid', '__cf_bm', '_cfuvid'], 
-        'body': ['attention required! | cloudflare', 'error code: 1020', 'ray id:', 'cloudflare ray id'] 
+    'Cloudflare': {
+        'headers': ['cf-ray', '__cfduid', 'cloudflare-cache-status', 'cdn-loop: cloudflare', 'cf-ipcountry'],
+        'cookies': ['__cfduid', '__cf_bm', '_cfuvid'],
+        'body': ['attention required! | cloudflare', 'error code: 1020', 'cloudflare ray id']
     },
-    'AWS WAF': { 
-        'headers': ['x-amz-cf-id', 'x-amzn-requestid'], 
-        'cookies': ['aws-waf-token'], 
-        'body': ['request blocked', '403 forbidden'] 
+    'AWS WAF': {
+        'headers': ['x-amz-cf-id', 'x-amzn-requestid'],
+        'cookies': ['aws-waf-token'],
+        'body': ['request blocked by aws waf', 'the request could not be satisfied']
     },
-    'Akamai': { 
-        'headers': ['x-akamai', 'akamai-ghost', 'edge-control', 'x-akamai-transformed'], 
-        'cookies': ['ak_bmsc', 'akaas_', 'akamai'], 
-        'body': ['access denied', 'akamaighost', 'akamai edge'] 
+    'Akamai': {
+        'headers': ['x-akamai', 'akamai-ghost', 'edge-control', 'x-akamai-transformed'],
+        'cookies': ['ak_bmsc', 'akaas_', 'akamai'],
+        'body': ['akamaighost', 'reference #18.']
     },
-    'Azure WAF': { 
-        'headers': ['x-ms-ref', 'x-azure-ref', 'x-ms-request-id'], 
-        'cookies': ['applicationgatewayaffinity', 'applicationgatewayaffinitycors'], 
-        'body': ['azure application gateway'] 
+    'Azure WAF': {
+        'headers': ['x-ms-ref', 'x-azure-ref', 'x-ms-request-id'],
+        'cookies': ['applicationgatewayaffinity', 'applicationgatewayaffinitycors'],
+        'body': ['azure application gateway']
     },
     'Google Cloud Armor': {
         'headers': ['via: 1.1 google'],
-        'body': ['403. that’s an error.', 'your client does not have permission to get url']
+        'body': ['your client does not have permission to get url']
     },
     'Fastly': {
         'headers': ['fastly-restarts', 'x-fastly-request-id', 'x-timer'],
         'cookies': ['_fastly_session'],
         'body': ['fastly error: unknown domain']
     },
-    'Imperva Incapsula': { 
-        'headers': ['x-cdn', 'incap-ses', 'visid_incap', 'x-iinfo', '_incap_'], 
-        'cookies': ['visid_incap', 'incap_ses', '_incap_'], 
-        'body': ['incapsula', 'incident id', 'powered by imperva'] 
+    'Imperva Incapsula': {
+        'headers': ['x-cdn', 'incap-ses', 'visid_incap', 'x-iinfo', '_incap_'],
+        'cookies': ['visid_incap', 'incap_ses', '_incap_'],
+        'body': ['incapsula incident id', 'powered by imperva']
     },
-    'Sucuri': { 
-        'headers': ['x-sucuri-id', 'x-sucuri-cache'], 
-        'cookies': ['sucuri_cloudproxyid'], 
-        'body': ['access denied - sucuri website firewall', 'sucuri cloudproxy'] 
+    'Sucuri': {
+        'headers': ['x-sucuri-id', 'x-sucuri-cache'],
+        'cookies': ['sucuri_cloudproxyid'],
+        'body': ['access denied - sucuri website firewall', 'sucuri cloudproxy']
     },
-    'StackPath': { 
-        'headers': ['x-sp-url', 'x-sp-var', 'x-cache-status'], 
-        'cookies': [], 
-        'body': ['stackpath', 'sorry, you have been blocked'] 
+    'StackPath': {
+        'headers': ['x-sp-url', 'x-sp-var', 'x-cache-status'],
+        'cookies': [],
+        'body': ['blocked by stackpath']
     },
-    'F5 BIG-IP ASM': { 
-        'headers': ['x-cnection', 'bigipserver', 'x-waf-event-id'], 
-        'cookies': ['bigipserver', 'ts', 'f5_cspm'], 
-        'body': ['the requested url was rejected', 'please consult with your administrator'] 
+    'F5 BIG-IP ASM': {
+        'headers': ['x-cnection', 'bigipserver', 'x-waf-event-id'],
+        'cookies': ['bigipserver', 'ts', 'f5_cspm'],
+        'body': ['the requested url was rejected. please consult with your administrator']
     },
-    'Citrix NetScaler': { 
-        'headers': ['ns_sig', 'citrix_ns_id', 'x-nscache'], 
-        'cookies': ['ns_sig', 'citrix_ns_id', 'nsk'], 
-        'body': ['violation of security policy', 'citrix netscaler'] 
+    'Citrix NetScaler': {
+        'headers': ['ns_sig', 'citrix_ns_id', 'x-nscache'],
+        'cookies': ['ns_sig', 'citrix_ns_id', 'nsk'],
+        'body': ['citrix netscaler', 'violation of security policy']
     },
-    'Barracuda': { 
-        'headers': ['barra_counter_session', 'bncookie'], 
-        'cookies': ['barra_counter_session', 'bncookie'], 
-        'body': ['barracuda networks', 'intent=barracuda_limiter'] 
+    'Barracuda': {
+        'headers': ['barra_counter_session', 'bncookie'],
+        'cookies': ['barra_counter_session', 'bncookie'],
+        'body': ['intent=barracuda_limiter']
     },
-    'FortiWeb': { 
-        'headers': ['fortiweb'], 
-        'cookies': ['fortiweb', 'ep_fw'], 
-        'body': ['firewall.fortinet.com', 'fortiweb'] 
+    'FortiWeb': {
+        'headers': ['fortiweb'],
+        'cookies': ['fortiweb', 'ep_fw'],
+        'body': ['firewall.fortinet.com']
     },
-    'Palo Alto': { 
-        'headers': ['x-waf-log', 'x-paloalto-waf'], 
-        'cookies': ['paloalto'], 
-        'body': ['has been blocked in accordance with company policy', 'palo alto networks'] 
+    'Palo Alto': {
+        'headers': ['x-waf-log', 'x-paloalto-waf'],
+        'cookies': ['paloalto'],
+        'body': ['has been blocked in accordance with company policy']
     },
     'SonicWall': {
         'headers': ['server: sonicwall'],
@@ -84,87 +84,97 @@ WAF_SIGNATURES = {
         'cookies': [],
         'body': ['powered by sophos', 'sophos web protection']
     },
-    'ModSecurity (OWASP CRS)': { 
-        'headers': ['mod_security', 'modsecurity'], 
-        'cookies': [], 
-        'body': ['not acceptable', '406 not acceptable', '403 forbidden', 'mod_security'] 
+    'ModSecurity (OWASP CRS)': {
+        'headers': ['mod_security', 'modsecurity'],
+        'cookies': [],
+        'body': ['this error was generated by mod_security']
     },
-    'Wordfence': { 
-        'headers': [], 
-        'cookies': ['wfvt_', 'wordfence_verifiedhuman'], 
-        'body': ['generated by wordfence', 'your access to this site has been limited'] 
-    },
-    'Nginx Generic WAF': { 
-        'headers': ['server: nginx'], 
-        'cookies': [], 
-        'body': ['403 forbidden', '406 not acceptable'] 
-    },
-    'Apache Generic WAF': { 
-        'headers': ['server: apache'], 
-        'cookies': [], 
-        'body': ['403 forbidden', '406 not acceptable'] 
+    'Wordfence': {
+        'headers': [],
+        'cookies': ['wfvt_', 'wordfence_verifiedhuman'],
+        'body': ['generated by wordfence', 'your access to this site has been limited']
     }
 }
+
+GENERIC_SERVER_MARKERS = {
+    'Nginx Generic (Heuristique)': 'server: nginx',
+    'Apache Generic (Heuristique)': 'server: apache',
+}
+
 
 def generate_random_string(length=8):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
 
+
 def match_signatures(response, heuristic=False):
     detected = set()
-    if not response: return []
-    
+    if response is None:
+        return []
+
     h_str = str(response.headers).lower()
     c_str = str(response.cookies.get_dict()).lower()
     b_str = response.text.lower()
 
     for name, sigs in WAF_SIGNATURES.items():
-        if any(s in h_str for s in sigs.get('headers', [])): 
+        if any(s in h_str for s in sigs.get('headers', [])):
             detected.add(f"{name} (Header)")
-        if any(s in c_str for s in sigs.get('cookies', [])): 
+        if any(s in c_str for s in sigs.get('cookies', [])):
             detected.add(f"{name} (Cookie)")
         if heuristic or response.status_code >= 400:
-            if any(s in b_str for s in sigs.get('body', [])): 
+            if any(s in b_str for s in sigs.get('body', [])):
                 detected.add(f"{name} (Body)")
-                
+
     return list(detected)
+
+
+def match_generic_server(response, is_blocking):
+    if response is None or not is_blocking:
+        return []
+    h_str = str(response.headers).lower()
+    return [name for name, marker in GENERIC_SERVER_MARKERS.items() if marker in h_str]
+
 
 def probe_behavior(engine, target):
     parsed = urlparse(target)
     base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-    if not base_url.endswith('/'): base_url += '/'
-    
+    if not base_url.endswith('/'):
+        base_url += '/'
+
     separator = "&" if "?" in target else "?"
     rnd_param = generate_random_string()
-    
+
     status = "Passif (Non-Bloquant)"
     normalization = "Non détectée"
-    
+
     BLOCK_CODES = [400, 403, 406, 500, 501]
 
     payload_1 = "<script>alert(1)</script>"
     params_1 = {rnd_param: payload_1}
-    
+
     if engine.config['verbose']:
         print(f"[NET] Test 1 (Standard) sur {target} avec {params_1}")
 
     resp1 = engine._send_request(base_url, method="GET", params=params_1)
-    
+
     detected_names = []
 
+    resp1_blocking = False
     if resp1 is not None:
         if engine.config['verbose']:
             print(f"[DEBUG] Réponse Test 1 : Code {resp1.status_code}")
-        
+
         detected_names.extend(match_signatures(resp1, heuristic=True))
-        
+
         if resp1.status_code in BLOCK_CODES:
+            resp1_blocking = True
             status = f"Actif/Bloquant (Code {resp1.status_code})"
-            if "nginx" in str(resp1.headers).lower() and not detected_names:
-                detected_names.append("ModSecurity / Nginx WAF (Heuristic)")
+
+        if not detected_names:
+            detected_names.extend(match_generic_server(resp1, resp1_blocking))
 
     payload_double = "%253Cscript%253Ealert(1)%253C/script%253E"
     test_url_2 = f"{base_url}{separator}{rnd_param}={payload_double}"
-    
+
     try:
         if engine.config['verbose']:
             print(f"[NET] Test 2 (Manual): {test_url_2}")
@@ -172,47 +182,49 @@ def probe_behavior(engine, target):
         req = Request('GET', test_url_2)
         prepped = engine.session.prepare_request(req)
         prepped.url = test_url_2
-        
-        resp2 = engine.session.send(prepped, verify=False, allow_redirects=True)
-        
+
+        resp2 = engine.session.send(prepped, verify=engine.verify_ssl, allow_redirects=True)
+
         if resp2 is not None:
             if engine.config['verbose']:
                 print(f"[DEBUG] Réponse Test 2 : Code {resp2.status_code}")
 
             if resp2.status_code in BLOCK_CODES:
                 normalization = "Active (Le WAF décode les entrées)"
-                
+
                 if "Passif" in status:
                     status = f"Actif/Bloquant (Via Normalisation - Code {resp2.status_code})"
                     detected_names.extend(match_signatures(resp2, heuristic=True))
-                    if "nginx" in str(resp2.headers).lower() and not detected_names:
-                        detected_names.append("ModSecurity / Nginx WAF (Heuristic)")
-                    
+                    if not detected_names:
+                        detected_names.extend(match_generic_server(resp2, True))
+
     except Exception as e:
-        if engine.config['verbose']: print(f"[DEBUG] Erreur envoi brut Test 2: {e}")
+        if engine.config['verbose']:
+            print(f"[DEBUG] Erreur envoi brut Test 2: {e}")
 
     return status, normalization, list(set(detected_names))
 
+
 def detect_waf(engine):
     target = engine.config['target']
-    
+
     base_resp = engine._send_request(target, method="GET")
-    
-    if not base_resp:
+
+    if base_resp is None:
         return {'name': 'Inaccessible', 'behavior': {'status': 'N/A'}}
 
     passive_names = match_signatures(base_resp)
-    
+
     status, normalization, active_names = probe_behavior(engine, target)
-    
+
     all_names = list(set(passive_names + active_names))
-    
+
     waf_name = "Aucun WAF détecté"
     if all_names:
         waf_name = ", ".join(all_names)
-    
+
     if "Bloquant" in status and "Aucun" in waf_name:
-         waf_name = "Generic WAF (Comportemental)"
+        waf_name = "Generic WAF (Comportemental, non identifié)"
 
     return {
         'name': waf_name,

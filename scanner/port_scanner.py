@@ -55,7 +55,7 @@ def identify_web_service(hostname, port):
         try:
             requests.head(url, timeout=2, verify=False, allow_redirects=True)
             return url
-        except:
+        except Exception:
             continue
     
     return None

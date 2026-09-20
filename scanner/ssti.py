@@ -8,7 +8,7 @@ def load_payloads_from_file(filename="payloads/ssti.txt"):
     try:
         with open(filename, 'r') as f:
             return [line.strip() for line in f if line.strip() and not line.startswith('#')]
-    except: 
+    except Exception: 
         return [f"{{{{{CALC_A}*{CALC_B}}}}}"] 
 
 def run_ssti_test(engine, point, param_name, level, bypass, waf_name=None):
@@ -16,7 +16,7 @@ def run_ssti_test(engine, point, param_name, level, bypass, waf_name=None):
     method = point['method']
     
     base_resp = engine._send_request(url, method=method)
-    if base_resp and TARGET_RESULT in base_resp.text: return
+    if base_resp is not None and TARGET_RESULT in base_resp.text: return
 
     payloads = load_payloads_from_file()
 
@@ -34,5 +34,5 @@ def run_ssti_test(engine, point, param_name, level, bypass, waf_name=None):
 
         resp = engine._send_request(url, method=method, data=data, params=params)
         
-        if resp and TARGET_RESULT in resp.text:
+        if resp is not None and TARGET_RESULT in resp.text:
             engine.add_vulnerability("SSTI", url, final_payload, f"Calcul exécuté ({TARGET_RESULT})", parameter=param_name)

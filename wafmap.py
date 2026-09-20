@@ -16,11 +16,17 @@ except ImportError:
         sys.exit(1)
 
 def main():
-    parser = argparse.ArgumentParser(description="WAFMap: Outil de scan et bypass de WAF (Projet de Stage)")
+    parser = argparse.ArgumentParser(description="WAFMap: Outil de scan et bypass de WAF")
 
     group_target = parser.add_argument_group('Cible')
-    group_target.add_argument("--target", required=True, help="URL cible (ex: http://example.com)")
-    
+    target_ex = group_target.add_mutually_exclusive_group(required=True)
+    target_ex.add_argument("--target", help="URL cible (ex: http://example.com)")
+    target_ex.add_argument("--target-list", help="Fichier contenant une URL cible par ligne")
+
+    group_scope = parser.add_argument_group('Périmètre')
+    group_scope.add_argument("--allowed-domains", help="Domaines autorisés séparés par virgules (sous-domaines inclus). Sans cette option, seul le domaine de --target est autorisé pour les hosts découverts (--subdomains, --ports)")
+    group_scope.add_argument("--verify-ssl", action="store_true", help="Vérifier les certificats TLS (désactivé par défaut pour le pentest)")
+
     group_output = parser.add_argument_group('Rapport')
     group_output.add_argument("--output", help="Chemin du fichier pour sauvegarder le rapport")
     group_output.add_argument("--format", default="txt", choices=["json", "txt", "html"], help="Format de sortie (défaut: txt)")
@@ -33,6 +39,14 @@ def main():
     group_http.add_argument("--data", help="Données brutes pour forcer une requête POST")
     group_http.add_argument("--match-code", type=int, help="Validation manuelle : Code HTTP attendu")
     group_http.add_argument("--match-text", help="Validation manuelle : Chaîne attendue dans la réponse")
+    group_http.add_argument("--rate-limit", type=float, help="Plafond global de requêtes/seconde tous threads confondus")
+
+    group_auth = parser.add_argument_group('Authentification')
+    group_auth.add_argument("--login-url", help="URL de connexion à POST avant le scan")
+    group_auth.add_argument("--login-data", help="Corps du POST de login (ex: 'user=admin&pass=admin')")
+    group_auth.add_argument("--login-success-text", help="Texte attendu dans la réponse en cas de login réussi")
+    group_auth.add_argument("--second-session-cookie", help="En-tête Cookie brut d'un second compte, pour les tests IDOR différentiels")
+    group_auth.add_argument("--second-session-header", help="En-tête custom 'Nom: valeur' du second compte (ex: Authorization: Bearer ...)")
 
     group_config = parser.add_argument_group('Config')
     group_config.add_argument("--threads", type=int, default=20, help="Niveau de parallélisme (défaut 20)")
@@ -47,8 +61,8 @@ def main():
     group_features.add_argument("--subdomains", action="store_true", help="Activer l'énumération de sous-domaines")
     group_features.add_argument("--api-scan", action="store_true", help="Activer la découverte d'endpoints API")
     group_features.add_argument("--cve", action="store_true", help="Rechercher les CVE publiques du WAF détecté")
-    
-    group_features.add_argument("--category", default=None, 
+
+    group_features.add_argument("--category", default=None,
         choices=["all", "sqli", "xss", "ssrf", "ssti", "lfi", "cmdi", "nosqli", "csrf", "idor", "smuggling"],
         help="Limiter le scan à un type de vulnérabilité spécifique"
     )
@@ -63,15 +77,15 @@ def main():
     \  /\  / (_| |  | | |  | | (_| | |_) |     
      \/  \/ \__,_|__| |_|  |_|\__,_| ___/      
                                    | |        
-                   v1.0        	   |_|        
+                   v1.1        	   |_|        
     [/bold cyan]"""
     console.print(banner)
     console.print("[italic grey]   > Outil de Pentesting WAF & Bypass Automatisé[/italic grey]\n")
-    
+
     try:
         engine = Engine(args)
         engine.start_scan()
-        
+
     except KeyboardInterrupt:
         console.print(f"[bold red]\n[!] Scan interrompu par l'utilisateur.[/bold red]")
         sys.exit(0)

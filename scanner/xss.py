@@ -1,6 +1,8 @@
+import re
 from .tampering import apply_tampering
 
 XSS_MARKER = "WAFMAP_XSS"
+
 
 def load_payloads_from_file(filename="payloads/xss.txt"):
     try:
@@ -8,6 +10,19 @@ def load_payloads_from_file(filename="payloads/xss.txt"):
             return [line.strip() for line in f if line.strip() and not line.startswith('#')]
     except FileNotFoundError:
         return [f"<script>alert('{XSS_MARKER}')</script>"]
+
+
+def _reflected_inside_html_comment(response_text, payload):
+    for match in re.finditer(re.escape(payload), response_text):
+        window_start = max(0, match.start() - 200)
+        before = response_text[window_start:match.start()]
+        last_open = before.rfind("<!--")
+        last_close = before.rfind("-->")
+        if last_open != -1 and last_open > last_close:
+            continue
+        return False
+    return True
+
 
 def validate_poc(response, payload, original_text):
     if XSS_MARKER not in response.text:
@@ -32,39 +47,49 @@ def validate_poc(response, payload, original_text):
     if "<" in payload and ">" in payload:
         if payload_lower not in response_lower:
             return False
+        if _reflected_inside_html_comment(response.text, payload):
+            return False
+
     return True
+
 
 def run_xss_test(engine, injection_point, param_name, level, waf_bypass_enabled, waf_name=None):
     url = injection_point['url']
     method = injection_point['method']
-    
+
     dummy = "WAFMAP_BASELINE"
     b_data = {p: dummy for p in injection_point['parameters']} if method == 'POST' else None
     b_params = {p: dummy for p in injection_point['parameters']} if method == 'GET' else None
 
     base_resp = engine._send_request(url, method=method, data=b_data, params=b_params)
-    original_text = base_resp.text if base_resp else ""
+    original_text = base_resp.text if base_resp is not None else ""
 
     payloads = load_payloads_from_file()
 
     for payload in payloads:
+        if engine.is_vector_confirmed('XSS', url, param_name):
+            return
+
         curr_payload = payload.replace("WAFMAP_XSS_TEST_MARKER", XSS_MARKER)
-        
         final_payload = apply_tampering(curr_payload, 'xss', waf_bypass_enabled, waf_name)
-        
+
         data = b_data.copy() if b_data else None
         params = b_params.copy() if b_params else None
-        
-        if method == 'POST': data[param_name] = final_payload
-        else: params[param_name] = final_payload
+
+        if method == 'POST':
+            data[param_name] = final_payload
+        else:
+            params[param_name] = final_payload
 
         response = engine._send_request(url, method=method, data=data, params=params)
-        
-        if response and validate_poc(response, final_payload, original_text):
+
+        if response is not None and validate_poc(response, final_payload, original_text):
             engine.add_vulnerability(
-                "XSS (Reflected)", 
-                url, 
-                final_payload, 
-                "Payload reflété sans encodage HTML (Executable)", 
+                "XSS (Reflected)",
+                url,
+                final_payload,
+                "Payload reflété sans encodage HTML hors contexte de commentaire (probable exécution). "
+                "Confirmation dans un navigateur recommandée pour un rapport final.",
                 parameter=param_name
             )
+            return

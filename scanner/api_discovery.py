@@ -59,7 +59,7 @@ def detect_api(engine, base_url):
         
         resp = engine._send_request(url, method="GET")
         
-        if resp:
+        if resp is not None:
             if resp.status_code in [200, 401, 403]:
                 ctype = resp.headers.get('Content-Type', '').lower()
                 
