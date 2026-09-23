@@ -15,7 +15,7 @@ def generate_report(engine):
 
     data = {
         "scan_info": {
-            "tool": "WAFMap v1.1",
+            "tool": "WAFMap v1.2",
             "target": engine.config['target'],
             "date": time.strftime("%Y-%m-%d %H:%M:%S"),
             "waf_detected": engine.detected_waf_name,
@@ -27,11 +27,13 @@ def generate_report(engine):
             },
             "total_confirmed": len(confirmed),
             "total_to_verify": len(to_verify),
-            "total_recon": len(engine.recon_findings)
+            "total_recon": len(engine.recon_findings),
+            "total_bypass_confirmed": len([b for b in engine.bypass_findings if b['worked']])
         },
         "vulnerabilities_confirmed": confirmed,
         "vulnerabilities_to_verify": to_verify,
-        "recon_findings": engine.recon_findings
+        "recon_findings": engine.recon_findings,
+        "bypass_findings": engine.bypass_findings
     }
 
     try:
@@ -87,6 +89,15 @@ def save_txt(data, filename):
             f.write(f"    DETAILS: {finding['details']}\n")
             f.write("-" * 50 + "\n")
 
+        f.write(f"\n--- TECHNIQUES DE BYPASS WAF TESTÉES ({len(data['bypass_findings'])}) ---\n\n")
+        for idx, b in enumerate(data['bypass_findings'], 1):
+            verdict = "CONFIRMÉ" if b['worked'] else "ÉCHEC"
+            f.write(f"[{idx}] {verdict} - {b['vtype'].upper()} sur {b['url']}\n")
+            f.write(f"    WAF: {b['waf']}\n")
+            f.write(f"    Technique: {b['technique']}\n")
+            f.write(f"    Payload canari: {b['canary_payload']}\n")
+            f.write("-" * 50 + "\n")
+
 
 def _vuln_card_html(i, vuln, border_class):
     safe_payload = html.escape(str(vuln['payload']))
@@ -125,10 +136,30 @@ def _recon_card_html(i, finding):
     """
 
 
+def _bypass_card_html(i, b):
+    border_class = "confirmed" if b['worked'] else "to-verify"
+    badge_label = "Bypass confirmé" if b['worked'] else "Aucun bypass trouvé"
+    return f"""
+    <div class="vuln-card {border_class}">
+        <div class="vuln-header">
+            <span class="vuln-id">#{i + 1}</span>
+            <span class="vuln-title">{html.escape(b['vtype'].upper())} - {html.escape(str(b['waf']))}</span>
+            <span class="badge {border_class}">{badge_label}</span>
+        </div>
+        <div class="vuln-body">
+            <div class="row"><strong>URL :</strong> <a href="{html.escape(b['url'])}" target="_blank">{html.escape(b['url'])}</a></div>
+            <div class="row"><strong>Technique :</strong> <code>{html.escape(str(b['technique']))}</code></div>
+            <div class="row"><strong>Payload canari :</strong> <pre>{html.escape(str(b['canary_payload']))}</pre></div>
+        </div>
+    </div>
+    """
+
+
 def save_html(data, filename):
     confirmed_html = "".join(_vuln_card_html(i, v, "confirmed") for i, v in enumerate(data['vulnerabilities_confirmed']))
     to_verify_html = "".join(_vuln_card_html(i, v, "to-verify") for i, v in enumerate(data['vulnerabilities_to_verify']))
     recon_html = "".join(_recon_card_html(i, f) for i, f in enumerate(data['recon_findings']))
+    bypass_html = "".join(_bypass_card_html(i, b) for i, b in enumerate(data['bypass_findings']))
 
     if not confirmed_html:
         confirmed_html = '<div class="empty-state">Aucune vulnérabilité confirmée.</div>'
@@ -136,6 +167,8 @@ def save_html(data, filename):
         to_verify_html = '<div class="empty-state">Rien à vérifier manuellement.</div>'
     if not recon_html:
         recon_html = '<div class="empty-state">Aucun finding de reconnaissance.</div>'
+    if not bypass_html:
+        bypass_html = '<div class="empty-state">Aucune technique de bypass testée (option --waf-bypass non utilisée).</div>'
 
     template = f"""
     <!DOCTYPE html>
@@ -206,6 +239,9 @@ def save_html(data, filename):
 
             <h2>Findings de reconnaissance</h2>
             {recon_html}
+
+            <h2>Techniques de bypass WAF</h2>
+            {bypass_html}
         </div>
     </body>
     </html>

@@ -1,5 +1,6 @@
 import re
 from .tampering import apply_tampering
+from . import bypass_oracle
 
 XSS_MARKER = "WAFMAP_XSS"
 
@@ -58,11 +59,18 @@ def run_xss_test(engine, injection_point, param_name, level, waf_bypass_enabled,
     method = injection_point['method']
 
     dummy = "WAFMAP_BASELINE"
-    b_data = {p: dummy for p in injection_point['parameters']} if method == 'POST' else None
-    b_params = {p: dummy for p in injection_point['parameters']} if method == 'GET' else None
+    base_params = {p: dummy for p in injection_point['parameters']}
 
-    base_resp = engine._send_request(url, method=method, data=b_data, params=b_params)
+    base_resp = engine._send_request(url, method=method,
+                                      data=base_params if method == 'POST' else None,
+                                      params=base_params if method == 'GET' else None)
     original_text = base_resp.text if base_resp is not None else ""
+
+    forced_technique = None
+    if waf_bypass_enabled:
+        forced_technique = bypass_oracle.probe_and_get_technique(
+            engine, url, method, base_params, param_name, 'xss', waf_name
+        )
 
     payloads = load_payloads_from_file()
 
@@ -71,25 +79,22 @@ def run_xss_test(engine, injection_point, param_name, level, waf_bypass_enabled,
             return
 
         curr_payload = payload.replace("WAFMAP_XSS_TEST_MARKER", XSS_MARKER)
-        final_payload = apply_tampering(curr_payload, 'xss', waf_bypass_enabled, waf_name)
+        final_payload = apply_tampering(curr_payload, 'xss', waf_bypass_enabled, waf_name, technique=forced_technique)
 
-        data = b_data.copy() if b_data else None
-        params = b_params.copy() if b_params else None
-
-        if method == 'POST':
-            data[param_name] = final_payload
+        if waf_bypass_enabled:
+            response = engine._send_request_raw(url, method, base_params, param_name, final_payload)
         else:
-            params[param_name] = final_payload
-
-        response = engine._send_request(url, method=method, data=data, params=params)
+            data = dict(base_params)
+            data[param_name] = final_payload
+            response = engine._send_request(url, method=method,
+                                              data=data if method == 'POST' else None,
+                                              params=data if method == 'GET' else None)
 
         if response is not None and validate_poc(response, final_payload, original_text):
-            engine.add_vulnerability(
-                "XSS (Reflected)",
-                url,
-                final_payload,
-                "Payload reflété sans encodage HTML hors contexte de commentaire (probable exécution). "
-                "Confirmation dans un navigateur recommandée pour un rapport final.",
-                parameter=param_name
-            )
+            details = ("Payload reflété sans encodage HTML hors contexte de commentaire (probable exécution). "
+                        "Confirmation dans un navigateur recommandée pour un rapport final.")
+            if waf_bypass_enabled and forced_technique:
+                details += f" Technique de bypass utilisée : {forced_technique}."
+
+            engine.add_vulnerability("XSS (Reflected)", url, final_payload, details, parameter=param_name)
             return

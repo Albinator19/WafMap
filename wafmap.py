@@ -77,7 +77,7 @@ def main():
     \  /\  / (_| |  | | |  | | (_| | |_) |     
      \/  \/ \__,_|__| |_|  |_|\__,_| ___/      
                                    | |        
-                   v1.1        	   |_|        
+                   v1.2        	   |_|        
     [/bold cyan]"""
     console.print(banner)
     console.print("[italic grey]   > Outil de Pentesting WAF & Bypass Automatisé[/italic grey]\n")

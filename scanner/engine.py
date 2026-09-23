@@ -3,7 +3,7 @@ import time
 import urllib3
 import sys
 import os
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, urlencode
 from requests.adapters import HTTPAdapter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from bs4 import BeautifulSoup
@@ -82,7 +82,10 @@ class Engine:
         self.verify_ssl = self.config.get('verify_ssl_flag', False)
         self.vulnerabilities = []
         self.recon_findings = []
+        self.bypass_findings = []
+        self._bypass_cache = {}
         self.detected_waf_name = None
+        self.waf_is_blocking = True
         self.csrf_token = None
         self._confirmed_vectors = set()
 
@@ -173,25 +176,51 @@ class Engine:
             print(f"[!] Erreur lecture headers : {e}")
 
     def _send_request(self, url, method="GET", data=None, params=None, attempt=1, session=None):
-        sess = session or self.session
-        try:
-            if method == "GET" and self.config['data'] and data is None:
-                method = "POST"
-                data = self.config['data']
+        if method == "GET" and self.config['data'] and data is None:
+            method = "POST"
+            data = self.config['data']
 
+        if self.config['verbose']:
+            print(f"[REQ] {method} {url} | P:{params} D:{data}")
+
+        return self._dispatch(session or self.session, method, url, data=data, params=params, attempt=attempt)
+
+    def _send_request_raw(self, url, method, other_params, target_param, raw_value, session=None):
+        parsed = urlparse(url)
+        base = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+
+        clean_others = {k: v for k, v in (other_params or {}).items() if k != target_param}
+        other_qs = urlencode(clean_others)
+
+        pair = f"{target_param}={raw_value}"
+        body_or_qs = f"{other_qs}&{pair}" if other_qs else pair
+
+        if method == "POST":
+            full_url = base
+            data = body_or_qs
+            headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+        else:
+            full_url = f"{base}?{body_or_qs}"
+            data = None
+            headers = None
+
+        if self.config['verbose']:
+            print(f"[REQ-RAW] {method} {full_url if method == 'GET' else base} | BODY:{data}")
+
+        return self._dispatch(session or self.session, method, full_url, data=data, params=None, headers=headers)
+
+    def _dispatch(self, sess, method, url, data=None, params=None, headers=None, attempt=1):
+        try:
             self.rate_limiter.wait()
 
-            if self.config['verbose']:
-                print(f"[REQ] {method} {url} | P:{params} D:{data}")
-
             response = sess.request(
-                method, url, data=data, params=params,
+                method, url, data=data, params=params, headers=headers,
                 timeout=self.config['timeout'], verify=self.verify_ssl, allow_redirects=True
             )
 
             if response.status_code in [429, 503] and attempt <= 3:
                 time.sleep(2 * attempt)
-                return self._send_request(url, method, data, params, attempt + 1, session=session)
+                return self._dispatch(sess, method, url, data=data, params=params, headers=headers, attempt=attempt + 1)
 
             return response
 
@@ -269,6 +298,27 @@ class Engine:
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
         })
 
+    def add_bypass_finding(self, vtype, url, waf_name, technique, worked, canary_payload):
+        entry = {
+            "vtype": vtype, "url": url, "waf": waf_name,
+            "technique": technique, "worked": worked,
+            "canary_payload": canary_payload,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+        self.bypass_findings.append(entry)
+
+        if worked:
+            console.print(f"[bold magenta][BYPASS CONFIRMÉ][/bold magenta] {vtype.upper()} sur {url} "
+                           f"contourne [green]{waf_name}[/green] via la technique [bold]{technique}[/bold]")
+        elif self.config['verbose']:
+            print(f"[BYPASS] Aucune technique testée n'a fonctionné pour {vtype} sur {url} ({waf_name}).")
+
+    def get_bypass_technique(self, vtype, url):
+        return self._bypass_cache.get((vtype, url))
+
+    def set_bypass_technique(self, vtype, url, technique):
+        self._bypass_cache[(vtype, url)] = technique
+
     def start_scan(self):
         login_result = perform_login(self)
 
@@ -293,8 +343,10 @@ class Engine:
         total = len(self.vulnerabilities)
         confirmed = len([v for v in self.vulnerabilities if v['confidence'] == 'Confirmée'])
         to_verify = total - confirmed
+        bypasses_found = len([b for b in self.bypass_findings if b['worked']])
         console.print(f"\n[*] Scan terminé. {confirmed} vulnérabilité(s) confirmée(s), "
-                       f"{to_verify} à vérifier manuellement, {len(self.recon_findings)} finding(s) de reconnaissance.")
+                       f"{to_verify} à vérifier manuellement, {len(self.recon_findings)} finding(s) de reconnaissance, "
+                       f"{bypasses_found} technique(s) de bypass WAF confirmée(s).")
 
         if self.config['output']:
             generate_report(self)
@@ -345,6 +397,7 @@ class Engine:
 
                 waf = detect_waf(self)
                 self.detected_waf_name = waf.get('name')
+                self.waf_is_blocking = 'Bloquant' in waf.get('behavior', {}).get('status', '')
                 console.print(f"[bold yellow][*] WAF Détecté :[/bold yellow] [green]{self.detected_waf_name}[/green] "
                                f"| Statut : [bold]{waf.get('behavior', {}).get('status')}[/bold]")
 

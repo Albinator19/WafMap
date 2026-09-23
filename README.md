@@ -1,6 +1,8 @@
-# WAFMap v1.1 - WAF Offensive Security Tool
+# WAFMap v1.2 - WAF Offensive Security Tool
 
 **WAFMap** est un outil de pentest automatisé conçu pour la reconnaissance, la détection de Web Application Firewalls (WAF) et le test de techniques d'évasion (*bypass*).
+
+Son objectif principal est d'automatiser l'évaluation de la robustesse des protections périmétriques face à des attaques sophistiquées et obfusquées.
 
 ---
 
@@ -17,7 +19,7 @@
     * **IDOR** : Test différentiel à deux comptes (`--second-session-cookie`) quand disponible, sinon heuristique marquée "à vérifier".
     * **CSRF** : Prend en compte la protection `SameSite` des cookies de session avant de conclure.
     * **Vecteurs additionnels** : SSTI, LFI, NoSQLi.
-* **Module de Tampering Dynamique** : Application de techniques d'obfuscation (double encodage, changement de casse, commentaires injectés, wildcards Bash) pour tromper les moteurs de détection.
+* **Module de Tampering Dynamique avec Oracle de Bypass** : Avant chaque catégorie de test (SQLi, XSS, LFI, CMDi, SSRF, SSTI, NoSQLi), un payload canari est envoyé pour vérifier s'il est bloqué ; si oui, chaque technique d'évasion disponible est testée de façon déterministe jusqu'à en trouver une qui passe. La technique gagnante est réutilisée pour tout le scan sur ce point d'entrée et **rapportée comme un finding à part entière** ("telle technique contourne tel WAF").
 * **Limitation de débit globale** : Plafond de requêtes/seconde partagé par tous les threads (`--rate-limit`), pour limiter le risque de ban IP automatique.
 * **Reporting** : Export des résultats en formats TXT, JSON ou HTML, avec séparation claire entre vulnérabilités **confirmées**, **à vérifier manuellement** et **findings de reconnaissance** (CVE publiques, endpoints API).
 
@@ -29,7 +31,8 @@ L'outil est architecturé autour d'un moteur central écrit en **Python 3**, pri
 * **`Engine`** : Orchestrateur gérant les sessions HTTP via `requests.Session` (support des cookies, du proxy, d'une seconde session pour l'IDOR, et d'une liste de cibles via `--target-list`).
 * **`Auth`** : Module de login automatique avant le lancement du scan.
 * **`RateLimiter`** : Limiteur de débit global thread-safe partagé par tous les workers.
-* **`Tampering`** : Module spécialisé dans la transformation des payloads pour l'évasion.
+* **`Tampering`** : Module spécialisé dans la transformation des payloads pour l'évasion, 4 à 6 techniques distinctes et sélectionnables explicitement par catégorie.
+* **`BypassOracle`** : Envoie un payload canari, détecte le blocage (code HTTP ou signature WAF), teste chaque technique jusqu'à en trouver une qui fonctionne, et met le résultat en cache par (catégorie, URL).
 * **`Multi-threading`** : Utilisation de `ThreadPoolExecutor` pour des scans rapides et efficaces.
 * **`urllib.parse`** : Manipulation précise des composants d'URL pour des injections ciblées.
 
@@ -76,28 +79,24 @@ python3 wafmap.py --target "http://target.com/profile?id=1" \
 --category idor \
 --second-session-cookie "session=COOKIE_DU_COMPTE_B"
 ```
+
 ---
 
-## Différences par rapport à la v1.0
+## Différences par rapport à la v1.1
 
-Cette version corrige plusieurs problèmes de fiabilité identifiés lors d'un audit de code complet du MVP, et ajoute les fonctionnalités jugées prioritaires pour un usage en mission réelle.
+Cette version corrige des problèmes touchant spécifiquement la fonctionnalité de **bypass de WAF** (`--waf-bypass`), qui était non-opérationnelle en v1.1 malgré sa présence dans le code.
 
-* **Réduction des faux positifs** :
-    * `idor.py` : ne conclut plus à une IDOR sur un simple code 200 ; teste désormais un identifiant clairement invalide en référence, et effectue un vrai test différentiel à deux comptes si `--second-session-cookie` est fourni.
-    * `csrf.py` : vérifie l'attribut `SameSite` des cookies de session avant de signaler une absence de protection CSRF.
-    * `detection.py` : suppression des signatures de body génériques ("403 forbidden", "406 not acceptable") partagées entre plusieurs WAF, qui provoquaient des détections multiples et contradictoires sur une simple page d'erreur générique.
-    * `sqli.py` : ajout d'un contrôle de stabilité de page avant le test boolean-blind (une page au contenu naturellement variable désactive ce test pour éviter les faux positifs) ; le time-based exige désormais une confirmation par une deuxième requête plutôt qu'une seule mesure.
-* **Fiabilité du code** :
-    * Suppression de tous les `except:` nus : les erreurs sont maintenant visibles en mode `--verbose` au lieu d'être avalées silencieusement.
-    * Arrêt des tests sur un vecteur (URL + paramètre) dès qu'une vulnérabilité y est confirmée, pour réduire le bruit du rapport et le temps de scan (`sqli.py`, `xss.py`, `cmdi.py`).
-    * Ajout d'un `.gitignore` (le dossier `__pycache__` était committé).
-* **Nouvelles fonctionnalités pour un usage professionnel** :
-    * Flow d'authentification avant scan (`--login-url`, `--login-data`, `--login-success-text`).
-    * Scan de plusieurs cibles en une seule commande (`--target-list`).
-    * Contrôle explicite du périmètre pour les sous-domaines et ports découverts (`--allowed-domains`), au lieu d'un scope implicite illimité.
-    * Limitation de débit globale et thread-safe (`--rate-limit`), en plus du backoff existant sur 429/503.
-* **Reporting** : les rapports (TXT/JSON/HTML) séparent désormais les vulnérabilités **confirmées** des findings **à vérifier manuellement**, et isolent les découvertes de reconnaissance (CVE publiques du WAF détecté, endpoints API) qui ne sont pas des vulnérabilités prouvées sur la cible.
-* **Correction de documentation** : l'exemple `--api` du README (v1.0) ne correspondait à aucune option réelle du CLI ; corrigé en `--api-scan`.
+* **Correction critique (bypass totalement inopérant)** : `tampering.py` encodait manuellement les payloads (ex: espaces en `%09`), mais ce payload déjà encodé était ensuite passé à `requests` via un dictionnaire (`params=`/`data=`), qui l'encodait **une seconde fois**. Le serveur recevait la chaîne littérale `%2527%252F...` au lieu d'un payload exploitable vérifié byte pour byte avant correction. Corrigé par un nouvel envoi "brut" (`Engine._send_request_raw`) qui construit l'URL/le corps déjà encodés sans repasser par le dictionnaire `requests`, appliqué à tous les vecteurs (SQLi, XSS, LFI, CMDi, SSRF, SSTI, NoSQLi).
+* **Correction d'un bug de sémantique SQL** : `sql_obfuscate` remplaçait systématiquement `OR`→`||` et `AND`→`&&`, une syntaxe propre à MySQL. Sur SQLite, PostgreSQL, MSSQL ou Oracle, `||` est un opérateur de concaténation (pas OR) et `&&` n'existe pas : cette conversion cassait silencieusement l'injection sur la majorité des SGBD. Supprimée.
+* **Ajout d'un oracle de vérification (`bypass_oracle.py`)** : auparavant, une technique d'évasion était choisie au hasard à chaque requête, sans jamais vérifier si elle avait réellement traversé le WAF. Désormais, un payload canari est envoyé pour chaque catégorie active ; s'il est bloqué (code HTTP ou signature WAF détectée), chaque technique disponible est testée **une par une, de façon déterministe**, jusqu'à en trouver une qui fonctionne. La technique gagnante est mise en cache par (catégorie, URL) et réutilisée pour le reste du scan, garantissant reproductibilité et rapidité.
+* **Un vrai livrable de pentest** : chaque test de bypass (réussi ou non) est enregistré comme un finding séparé et apparaît dans une nouvelle section "Techniques de bypass WAF" du rapport (TXT/JSON/HTML) — exactement l'information qu'un pentester met dans un rapport de mission ("Cloudflare est contourné sur ce paramètre via la technique X"), plutôt qu'une liste de payloads obfusqués sans verdict.
+* **Techniques rendues explicitement sélectionnables** pour les 7 catégories (`SQLI_TECHNIQUES`, `XSS_TECHNIQUES`, `LFI_TECHNIQUES`, `CMDI_TECHNIQUES`, `SSRF_TECHNIQUES`, `SSTI_TECHNIQUES`, `NOSQLI_TECHNIQUES`), au lieu d'un tirage aléatoire interne non contrôlable, nécessaire pour que l'oracle puisse tester chaque technique isolément et de façon reproductible.
+* **Portée** : l'oracle couvre désormais l'intégralité des 7 vecteurs (SQLi, XSS, LFI, CMDi, SSRF, SSTI, NoSQLi), validés soit en conditions réelles contre une cible locale volontairement vulnérable (SQLi, CMDi), soit par test de contrôle de flux avec moteur simulé pour les vecteurs sans endpoint de démonstration disponible (LFI, SSRF, SSTI, NoSQLi).
+
+### Correctif (suite à un test contre une cible réelle derrière Cloudflare)
+
+* **Faux positifs de blocage systématiques derrière un WAF passif (ex: Cloudflare)** : `bypass_oracle._is_blocked()` utilisait `match_signatures()` avec détection par en-tête/cookie incluse, or un en-tête comme `cf-ray` est présent sur *toutes* les réponses Cloudflare, qu'elles soient bloquées ou non. L'oracle concluait donc systématiquement à un blocage et testait toutes les techniques pour rien, même quand le WAF ne bloquait strictement rien (des centaines de requêtes inutiles par catégorie sur une cible réelle). Corrigé : seul un code HTTP de blocage (400/403/406/500/501) ou une signature de **page de blocage** explicite dans le corps de la réponse déclenche désormais l'oracle, la simple présence d'un WAF n'est plus confondue avec un blocage actif.
+* **Court-circuit basé sur le statut réel du WAF** : le statut déterminé par `detect_waf()` (Actif/Bloquant vs Passif/Non-Bloquant) est maintenant réutilisé par l'oracle (`engine.waf_is_blocking`) pour éviter de lancer la moindre requête de test de bypass sur une cible dont le WAF est déjà connu comme non-bloquant.
 
 ---
 
